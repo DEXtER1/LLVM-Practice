@@ -1,8 +1,22 @@
+// Follow the seed and Extend Hot trace until an End statement is reached
+// or a Block is encountered that is already in the hottrace vector.
+// while visiting each basic block check if the visited block has more than one predecessors
+
+// After the Loop, Things produced are:
+// ->>>Hot trace is Generated
+// STACK::merge_blocks-  elements on the trace eligible for tail duplication and
+
+// Next Step: For Each element in the Stack One Tail Duplication is performed
+// For each basic block, clone th basic block
+// Set the predecessor and terminator of each blocks to complete the chain
+// Lastly perform Operand Remapping before proceeding with the next block in the tail Stacks
+
 #include "llvm/Pass.h"
 #include "llvm/Function.h"
 #include "llvm/Analysis/ProfileInfo.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/CFG.h"
 #include <stack>
 using namespace llvm;
@@ -19,272 +33,257 @@ namespace {
           AU.setPreservesAll();
           AU.addRequired<ProfileInfo>();
       }
-    virtual bool runOnFunction(Function &F) {
-        ProfileInfo *PI = &getAnalysis<ProfileInfo>();
+      virtual bool runOnFunction(Function &f);
+      void testTrace();
+      void perfTailDupl(Function &f);
+      void checkNumPredecessors(BasicBlock *);
+      bool getNextBasicBlock(BasicBlock *);
+
+
+
+    private:
+        ProfileInfo *PI;
+        BasicBlock* nxtBlck;
         std::vector<BasicBlock *> hot_trace;
         std::vector<BasicBlock *> merge_blocks;
-        std::vector<BasicBlock *> merge_predecessors;
+        SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,16 > BackEdges;
 
-        DEBUG(errs()<<"\n=============== Journey on the Hot trace ===================================================\n");
-        DEBUG(errs()<<"BasicBlock \t       Execution Count          Predecessors\n");
-        DEBUG(errs()<<"==============================================================================================");
-
-//        hot_trace.push_back(F.begin());//Seed for Hottrace planted.
-
-       // Follow the seed and Extend Hot trace until an End statement is reached
-       // or a Block is encountered that is already in the hottrace vector.
-       // while visiting each basic block check if the visited block has more than one predecessors,
-       // If so push the block in stack::tail_successor
-       // Identify the non-hot predecessor and push it in stack::tail_predecessors
-
-       // After the Loop, Things produced are:
-       // ->>>Hot trace is Generated
-       // STACK One::merge_blocks-  elements on the trace eligible for tail duplication and
-       // STACK TWO::merge_predecessors- predecessors of basic blocks from where tail duplication will begin.
-
-       // Next Step: For Each element in the Stack Two perform Tail Duplication
-       // For each element - Clone the entire sub tree
-       // Use a Stack to keep elements of the else branch of the tree
-       // Set the predecessor and terminator of each blocks to complete the chain
-       // Lastly perform Operand Remapping before proceeding with the next block in the tail Stacks
-
-      BasicBlock* bb=F.begin();//Setting the Seed.
-//      hot_trace.push_back(bb);
-
-       while(true)//Come out of the Loop using break whenever a condition for termination is met and the hottrace is formed completely.
-       {
-
-            TerminatorInst *term = bb->getTerminator();
-            // Print out the name of the basic block, number of instructions, and the Execution count
-            DEBUG(errs() << "\n" << bb->getName() << "\t\t\t"<<(int)PI->getExecutionCount(bb)<<"\t\t\t");
-            for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) { //Traversing each predecessor
-                              // Detect which predecessor is not in Hot trace
-                                BasicBlock *Pred = *PI;
-                                DEBUG(errs()<<" ;"<<Pred->getName());
-                       }
-            //------------------
-
-
-
-                //Special Case If Entry Block
-            if(pred_begin(bb)==pred_end(bb)){
-//                  errs()<<"GOtcha";
-                  hot_trace.push_back(bb);
-                  bb=term->getSuccessor(0);
-                  continue;
-                }
-
-           if(term->getNumSuccessors()>1)// If there exists more than one successors
-                {
-
-                            //Conditions of different terminator instructions -Switch, Indirect branch, etc will come here.
-                            // Check if it has a terminator branch instruction
-
-                            if(isa<BranchInst>(term)){
-                              BasicBlock *BB1=(BasicBlock *) term->getOperand(2);//Compare the Execution Counts of
-                              BasicBlock *BB2=(BasicBlock *) term->getOperand(1);//the basic-blocks & select greater
-
-/*                              DEBUG(errs()<<"\n---------------------------------------------------------------");
-                              DEBUG(errs()<<"\n BB 1 : "<<BB1->getName()<<"\t Exec Count : "<<(int)PI->getExecutionCount(BB1)
-                              <<"   BB 2 :"<<BB2->getName()<<"\t Exec Count : "<<(int)PI->getExecutionCount(BB2));
-*/
-
-                              if(PI->getExecutionCount(BB1) > PI->getExecutionCount(BB2)){    // BB1 > BB2
-                                  if((isa<BasicBlock > (BB1->getSinglePredecessor())) && (std::find(hot_trace.begin(), hot_trace.end(),BB1)==hot_trace.end()))
-                                      {//Check if it has just one predecessor and is not in the hot_trace
-                                        hot_trace.push_back(bb);
-                                        bb = *(&BB1);
-                                        continue;
-                                        }
-                                  else{
-                                  //   merge_blocks.push_back(BB1);
-                                       for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) { //Traversing each predecessor
-                                       // Detect which predecessor is not in Hot trace
-                                               BasicBlock *Pred = *PI;
-                                               if (std::find(hot_trace.begin(), hot_trace.end(),Pred)==hot_trace.end()){
-                                                       merge_predecessors.push_back(Pred);
-                                                       merge_blocks.push_back(bb);
-                                                       DEBUG(errs()<<"--Merge Block Detected :: "<<bb->getName());
-                                                       DEBUG(errs()<<":: Predecessor Block ::"<<Pred->getName());
-                                                      }//If new
-                                         }//Traversing Predecessors
-
-                                        if(std::find(hot_trace.begin(), hot_trace.end(),BB1)!=hot_trace.end()){
-                                              hot_trace.push_back(bb);
-                                              bb = *(&BB1);
-                                          }
-                                        else{
-                                              DEBUG(errs()<<"-->Block Revisited\n---------------------------------------------------------------");
-                                              break;
-                                          }
-                                    }//Else isa basic block and hot in trace
-                               }//BB1>BB2
-
-                              else{                                                          // BB2 > BB1
-                                        //Check if BB2 is already in the vector if so, quit the for loop
-                                  //      if (std::find(hot_trace.begin(), hot_trace.end(),BB2)==hot_trace.end()){
-                                  if((isa<BasicBlock>(BB2->getSinglePredecessor())) && (std::find(hot_trace.begin(), hot_trace.end(),BB2)==hot_trace.end())){
-                                           hot_trace.push_back(bb);
-                                           bb = *(&BB2);
-                                           continue;
-                                         }
-                                  else{
-                                               //More than One Predecessor -- Merge Block Detected
-                                               //----/Check if both the predecessors are not in hot trace.
-                                                 for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) { //Traversing each predecessor
-                                                   // Detect which predecessor is not in Hot trace
-                                                      BasicBlock *Pred = *PI;
-                                                      if (std::find(hot_trace.begin(), hot_trace.end(),Pred)==hot_trace.end()){
-                                                          merge_predecessors.push_back(Pred);
-                                                          merge_blocks.push_back(bb);
-                                                          DEBUG(errs()<<"\n--Merge Block Detected :: "<<bb->getName());
-                                                          DEBUG(errs()<<"--> Predecessor Block ::"<<Pred->getName());
-                                                         }//If new
-                                                      }//Traversing Predecessors
-
-
-                                        if(std::find(hot_trace.begin(), hot_trace.end(),BB1)!=hot_trace.end()){
-                                              hot_trace.push_back(bb);
-                                              bb = *(&BB1);
-                                          }
-                                        else{
-                                              DEBUG(errs()<<"-->Block Revisited\n---------------------------------------------------------------");
-                                              break;
-                                          }
-
-                                    }
-                                  }//Else EC of BB2 > BB1.
-                             }//If isa<Branch Instruction>
-                         else/*Else of ISA BRANCH inst*/ {
-                             errs()<<"!!!!!!!!ALERT!!!!!!!!!!UNCAUGHT EXCEPTION";
-                          }
-                      }//If number of successor greater than 1
-
-
-          else if(term->getNumSuccessors()==1) { //Just one Path , So add the block in hottrace
-                //hot_trace.push_back(bb);
-
-            if (std::find(hot_trace.begin(), hot_trace.end(),bb)==hot_trace.end()){
-//             DEBUG(errs()<<"Single Path"<<bb->getName());
-                hot_trace.push_back(bb);
-                //---Code to check if this is a Merge Block
-                //++++ Code needs to be added to check if this block is already in the hot trace
-               if (bb->getSinglePredecessor()!=NULL) { /// one predecessor OR Entry Block (Zero Predecessor)
-                      //  errs()<<"Works when BB is "<<BB2->getName();
-                      bb = term->getSuccessor(0);
-                      continue;
-                   }
-               else{
-                      //More than One Predecessor -- Merge Block Detected
-                      //----/Check if both the predecessors are not in hot trace.
-                      DEBUG(errs()<<"\n--Merge Block Detected :: "<<bb->getName());
-                      for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) { //Traversing each predecessor
-                          // Detect which predecessor is not in Hot trace
-                          BasicBlock *Pred = *PI;
-                          DEBUG(errs()<<":: Predecessor Block ::"<<Pred->getName());
-                          if (std::find(hot_trace.begin(), hot_trace.end(),Pred)==hot_trace.end()){
-                                merge_blocks.push_back(bb);
-                                merge_predecessors.push_back(Pred);
-                            } //If new
-                      }//Traversing Predecessors
-                      bb= term->getSuccessor(0);
-                  }
-              }
-
-            else//Revisited
-            {
-                DEBUG(errs()<<"\n============Revisit Detected=============="<<bb->getName());
-                break;
-             }
-          }
-      else if (term->getNumSuccessors()==0){
-             DEBUG(errs()<<"\n============Terminator Block Detected==============");
-             break;
-      }
-}//while Loop
-
-//-------Testing Trace----------
-
-//------------Hot Trace Formation complete ------
-DEBUG(errs()<<"\n---Hot trace ---\n");
-for( int i = 0; i< (int)hot_trace.size(); i++)
-    DEBUG(errs()<<">>  "<< hot_trace.at(i)->getName() << "  --");
-    DEBUG(errs()<<"||");
-DEBUG(errs()<<"\n----------------");
-//-----
-//DEBUG(errs()<<"Merge Predecessors------::>>"<<merge_predecessors.size()<<"++"<<merge_blocks.size());
-
-//------------Print Merge Blocks ------
-assert(merge_blocks.size()==merge_predecessors.size());
-DEBUG(errs()<<"\n---Merge Blocks ---\n");
-for( int i = 0; i<(int)merge_blocks.size(); i++){
-    DEBUG(errs()<<"\n>>  "<< merge_blocks.at(i)->getName());
-    DEBUG(errs()<<"||"<< merge_predecessors.at(i)->getName());}
-DEBUG(errs()<<"\n----------------\n");
-//-----
-//--------------------------------
-
-
-    //Code for Tail Duplication
-    for(int i=0; i<(int)merge_predecessors.size();i++){
-      DEBUG(errs()<<"\nBasic Blocks for Tail Duplication ["<<i<<"] : "<<(merge_predecessors.at(i)->getName()));
-      TerminatorInst *merge_term=merge_predecessors.at(i)->getTerminator();
-      DEBUG(errs()<<"\nTerminator Instruction for this block is "<<*merge_term);
-
-      BasicBlock* seed= (BasicBlock*) merge_term->getOperand(0);
-      std::stack<BasicBlock*> next;
-      next.push(seed);
-
-      while (next.size()!=0){ //Clone the entire subtree - the Till the Stack is empty.
-                 //      Method:
-                         //Clone the Basic Block
-                         //Append ".clone" to the cloned block
-                         //Change Operand in Cloned Block %1-->%5
-                         //Set predecessor and set Terminator
-
-                      //Take all basic blocks from the Hot Trace + Conditional paths too and Clone them and attach to the outlier
-
-                      ValueToValueMapTy VMap;
-                      BasicBlock* contblck = next.top();
-                      next.pop();
-                      BasicBlock* NewBB = CloneBasicBlock(contblck, VMap, ".clone",&F);
-
-                      //Perform the ReMapping of Clonedinstructions
-                      for(BasicBlock::iterator I = NewBB->begin(); I != NewBB->end(); ++I) {
-                         //Loop over all the operands of the instruction
-
-                         for(unsigned op=0, E = I->getNumOperands(); op != E; ++op) {
-                           const Value *Op = I->getOperand(op);
-                           //Get it out of the value map
-                           Value *V = VMap[Op];
-                           //If not in the value map, then its outside our trace so ignore
-                           if(V != 0)
-                           I->setOperand(op,V);
-                           }
-                       }//For Loop Basic Block iterator
-
-                       DEBUG(errs()<<"\nOld Terminator Instruction Operand "<<contblck->getName());
-                       merge_term->setOperand(0,NewBB);
-                //     Modify Terminator instruction of the Outlier block, Point it to the new Cloned Block
-                       DEBUG(errs()<<"\nContinuing block is "<<contblck->getName());
-
-                //     Print the Contents of the Cloned Block
-                       for(BasicBlock::iterator i = NewBB->begin(), e=NewBB->end(); i!=e ; i++)
-                       DEBUG(errs()<<"\nBASIC:"<<*i);
-
-                //     Code For handling IF, Switch and  other terminator instructions
-                //     Branch statement: push operand 2 first and then operand one.
-                       errs()<<"\n";
-                }
-      }
-
-         return true;
-     }
 };
 
-//};
+
+   bool TailDuplication :: runOnFunction (Function &F)
+      {
+
+
+        PI = &getAnalysis<ProfileInfo>();
+        //Clear hottrace and merge_blocks
+        hot_trace.clear();
+        merge_blocks.clear();
+
+
+        DEBUG(errs()<<"\n============================= Hot trace - Function : "<<  F.getName() <<" ===================================\n");
+        DEBUG(errs()<<"BasicBlock \t       Execution Count                Predecessors\n");
+        DEBUG(errs()<<"==============================================================================================");
+
+        BasicBlock* bb=F.begin();//Setting the Seed.
+        //Calculate the Loop Backedges and set them in BackEdges
+
+        FindFunctionBackedges(F,BackEdges);
+
+
+        while (true)//Come out of the Loop using break whenever a condition for termination is met and the hottrace is formed completely.
+          {
+
+
+              //Print out the name of the basic block, number of instructions, and the Execution count
+              DEBUG(errs() << "\n==========Hot trace:" << bb->getName() << "---"<<(int)PI->getExecutionCount(bb)<<"--");
+              for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI)
+                { //Traversing each predecessor
+                    BasicBlock *Pred = *PI;
+                    DEBUG(errs()<<" ;"<<Pred->getName());
+                }
+
+              //------------------
+
+            //Code for num predecessors.
+            checkNumPredecessors(bb);
+
+            //Code for next Basic Block in Hot trace.
+            if (getNextBasicBlock(bb))
+                bb = nxtBlck;
+            else
+                break;
+          }//while Loop
+
+        //-------Testing Trace----------
+//        testTrace();
+        //------------------------------
+
+        //Code for Tail Duplication
+        perfTailDupl(F);
+        //-------------------------
+        return true;
+      }
+
+    void TailDuplication::testTrace()
+      {
+
+        //------------Hot Trace Formation complete ------
+        DEBUG(errs()<<"\n---Hot trace ---\n");
+        for ( int i = 0; i< (int)hot_trace.size(); i++)
+        DEBUG(errs()<<">>  "<< hot_trace.at(i)->getName() << "  --");
+        DEBUG(errs()<<"||");
+        DEBUG(errs()<<"\n\n----------------");
+        //-----
+      }
+
+    void TailDuplication::perfTailDupl(Function &F)
+      {
+
+      // Traverse every Basic blocks present in the merge block and call clone functions on it
+
+        DEBUG(errs()<<"\n---Merge Blocks ---\n");
+        for ( int i = 0; i<(int)merge_blocks.size(); i++)
+          {
+             DEBUG(errs()<<"\n---------->>Merge Block Count:  "<<i<<"Block Name:"<< merge_blocks.at(i)->getName());
+                  std::stack<BasicBlock*> merge_other_pred;
+                  BasicBlock *bbtoclone = merge_blocks.at(i);
+
+                  //Detect if the block is a landing pad. If so it should be ignored for tail duplication
+                  if(!bbtoclone->isLandingPad())
+                  {
+                    DEBUG(errs()<<"\nBasic Block :"<<bbtoclone->getName()<<"Skipped as it is a Landing Pad");
+                    continue;
+                  }
+
+                  for (pred_iterator PI = pred_begin(bbtoclone), E = pred_end(bbtoclone); PI != E; ++PI) //Traversing each predecessor
+                    {
+                      BasicBlock *temp = *PI;
+                      //If the blocks are in hot trace do not push them in stack
+                      if (std::find(hot_trace.begin(), hot_trace.end(),temp)==hot_trace.end())
+                        {
+                          merge_other_pred.push (temp);      //Storing corresponding parents of the basic block
+                        }
+
+                    }
+
+//                  DEBUG(errs()<<"\nBasic Blocks for Tail Duplication "<<bbtoclone->getName());
+                  ValueToValueMapTy VMap;
+                  BasicBlock* clonedBB = CloneBasicBlock(bbtoclone, VMap, ".clone",&F);
+
+                  //Perform the ReMapping of Clonedinstructions
+                  for (BasicBlock::iterator I = clonedBB->begin(); I != clonedBB->end(); ++I)
+                    {
+                      //Loop over all the operands of the instruction
+                      for (unsigned op=0, E = I->getNumOperands(); op != E; ++op)
+                        {
+                          const Value *Op = I->getOperand(op);
+                          //Get it out of the value map
+                          Value *V = VMap[Op];
+                          //If not in the value map, then its outside our trace so ignore
+                          if(V != 0)
+                            I->setOperand(op,V);
+                        }
+                    }//For Loop Basic Block iterator
+
+
+                  // Replace the Operand in the terminator instruction of each predecessor block apart form the ones in
+                  // hot trace so that the block points to the new cloned block. The way to do this is to traverse the terminator
+                  // instruction and check which operands matches this
+
+                  while(merge_other_pred.size()!=0)
+                    {
+                        BasicBlock *pred = merge_other_pred.top();
+                        merge_other_pred.pop();
+                        unsigned pos;
+
+                        TerminatorInst *pred_term = pred->getTerminator();
+                        DEBUG(errs()<<"\n-------Terminator Instruction Merge Predecessor blocks "<<*pred_term);
+                        unsigned e = pred_term->getNumSuccessors();
+                        for (pos = 0; pos<=e ; pos++)
+                          {
+
+                              DEBUG(errs()<<"\n----Operand ["<<pos<<"]"<<pred_term->getOperand(pos)->getName());
+                              if (pred_term->getOperand(pos) == bbtoclone)
+                                {
+                                  DEBUG(errs()<<"\n----Terminator Operand Number : "<<pos);
+                                  pred_term->setOperand(pos,clonedBB);
+                                  break;
+                                }
+                          }
+                    }//While loop on merge_other_pred
+
+          }//For Loop for all merge blocks in the vector
+        DEBUG(errs()<<"\n----------------\n");
+
+
+     }//Perform Tail Duplication function
+
+    void TailDuplication::checkNumPredecessors(BasicBlock * bb)// Check the number of Predecessors and if it is greater than one; return the pointer to the block. Set the Pointers in merge blocks.
+      {
+            // If Entry Block -- No Predecessor
+            if (pred_begin(bb)==pred_end(bb))
+              {
+                  hot_trace.push_back(bb);
+                  DEBUG(errs()<<"\n------- Entry Basic Block");
+              }
+            else if (bb->getSinglePredecessor() != NULL) // If it has single predecessor
+              {
+                  hot_trace.push_back(bb);
+                  DEBUG(errs()<<"\n-- Only one Predecessor");
+                  return;
+              }
+            else //More than one Predecessors -- Merge Block detected -- But check if the number of predecessors after back edges is greater than one
+              {
+                  DEBUG(errs()<<"\n--More than one Predecessors for "<< bb->getName());
+                  int uniquePredecessor=0;
+                  //Traverse each predecessors and calculate unique Predecessors by matching them with back edges
+                  DEBUG(errs()<<"\n]]]]]]]]]] Predecessors :");
+                  BasicBlock *temp;
+                  for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) //Traversing each predecessor
+                     {
+
+                          uniquePredecessor++;
+                          temp = *PI;
+                          //Compare each predecessor with back edge
+                          //SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,32 > BackEdges;
+                          for (unsigned i=0; i <BackEdges.size();i++)
+                            {
+
+                              if (BackEdges[i].second == bb) //Check "to" block == merge block
+                                {
+                                  if (BackEdges[i].first == temp) //check "from" condition == predecessor block
+                                     {
+                                        uniquePredecessor--;
+                                        DEBUG(errs()<<"\n****Back Edges from:"<< BackEdges[i].first->getName()<<"\tto:"<<BackEdges[i].second->getName());
+                                     }
+                                }
+                            }
+
+                      }
+
+                    if(uniquePredecessor > 1)
+                      {
+                          hot_trace.push_back(bb);
+                          merge_blocks.push_back(bb);
+                      }
+                    else
+                      {
+                          DEBUG("\nThis is not a merge block");
+                          return;
+                      }
+
+              }//else more than one predecessor
+      }//checkNumPredecessors function definition
+
+    bool  TailDuplication::getNextBasicBlock(BasicBlock * bb) // Returns the next basic block from the numerous successors based on the number of executions
+      {
+
+            int maxexecution=0;
+            for (succ_iterator SI = succ_begin(bb), E = succ_end(bb); SI != E; ++SI) //find the One from many successor for hot trace.
+              {
+                BasicBlock *temp= *SI;
+                 if((int)PI->getExecutionCount(temp) > maxexecution)
+                 {
+                    maxexecution = (int)PI->getExecutionCount(temp);
+                    nxtBlck = temp;
+                 }
+              }
+
+              //Check if the block is revisited block
+
+             if (std::find(hot_trace.begin(), hot_trace.end(),nxtBlck)!=hot_trace.end())
+               {
+                  DEBUG(errs()<<"\n--Node Selected is :"<<nxtBlck->getName());
+                  return true;
+               }
+             else
+               {
+                 DEBUG(errs()<<">>>>>>>>>>>>Block Revisited\n---------------------------------------------------------------");
+                 return false;//Trace complete.
+               }
+      }
 
 char TailDuplication::ID = 0;
 static RegisterPass<TailDuplication> X("HKtaildupl","------Performs Tail Duplication for Super Block Scheduling ",false,false);
-
 }
