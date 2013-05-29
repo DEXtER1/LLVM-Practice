@@ -1,0 +1,42 @@
+INPUT: byoudoin.jpg spec_train1
+
+================ Without O3 Pass=============
+--------------Comments: first attempt---------
+Before:
+0.915991
+After:
+0.786549
+--------------Comments: second attempt---------
+Before:
+0.914295
+After:
+0.791096
+--------------Comments: third attempt---------
+Before:
+0.917277
+After:
+0.813237
+
+==============After O3 Pass================
+--------------Comments: first attempt---------
+Before:
+0.427998
+After:
+0.238133
+--------------Comments: second attempt---------
+Before:
+0.4304
+After:
+0.237877
+--------------Comments: third attempt---------
+Before:
+0.429806
+After:
+0.239693
+
+INPUT: chicken.jpg spec_ref1 
+============== Without O3 Pass================
+--------------Comments: after crash---------
+0.001861
+After:
+0.00168

@@ -1,0 +1,21 @@
+ Execution Results:
+
+Duration: 0.000000       Queens: 8       Solutions: 92 -  Without Tail Duplication
+
+Duration: 0.000000       Queens: 8       Solutions: 92 -  After Tail Duplication
+
+Duration: 0.020000       Queens: 10      Solutions: 724 -  Without Tail Duplication
+
+Duration: 0.010000       Queens: 10      Solutions: 724 -  After Tail Duplication
+
+Duration: 0.930000       Queens: 12      Solutions: 14200 -  Without Tail Duplication
+
+Duration: 0.640000       Queens: 12      Solutions: 14200 -  After Tail Duplication
+
+Duration: 39.130000      Queens: 14      Solutions: 365596 -  Without Tail Duplication
+
+Duration: 26.640000      Queens: 14      Solutions: 365596 -  After Tail Duplication
+
+Duration: 2034.720000    Queens: 16      Solutions: 14772512 -  Without Tail Duplication
+
+Duration: 1399.600000    Queens: 16      Solutions: 14772512 -  After Tail Duplication

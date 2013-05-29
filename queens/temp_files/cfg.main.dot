@@ -1,0 +1,10 @@
+digraph "CFG for 'main' function" {
+	label="CFG for 'main' function";
+
+	Node0x286c210 [shape=record,label="{entry|{<s0>T|<s1>F}}"];
+	Node0x286c210:s0 -> Node0x286c270;
+	Node0x286c210:s1 -> Node0x286c2d0;
+	Node0x286c270 [shape=record,label="{if.then}"];
+	Node0x286c270 -> Node0x286c2d0;
+	Node0x286c2d0 [shape=record,label="{if.end}"];
+}
