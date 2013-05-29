@@ -1,9 +1,9 @@
 10
 
 dir
-59663
-svn+ssh://svk@forest.cs.princeton.edu/liberty/svk/repo/trunk/liberty/projects/nightly-regression/401.bzip2/spec_train1
-svn+ssh://svk@forest.cs.princeton.edu/liberty/svk/repo
+59878
+svn+ssh://hshah@forest.cs.princeton.edu/liberty/svk/repo/trunk/liberty/projects/nightly-regression/401.bzip2/spec_train1
+svn+ssh://hshah@forest.cs.princeton.edu/liberty/svk/repo
 
 
 
@@ -26,9 +26,9 @@ npjohnso
 
 7299699c-b900-0410-bfbd-c2ca6a177456
 
-out
+in
 dir
 
-in
+out
 dir
 

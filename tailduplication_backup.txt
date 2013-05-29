@@ -1,3 +1,4 @@
+
 // Follow the seed and Extend Hot trace until an End statement is reached
 // or a Block is encountered that is already in the hottrace vector.
 // while visiting each basic block check if the visited block has more than one predecessors,

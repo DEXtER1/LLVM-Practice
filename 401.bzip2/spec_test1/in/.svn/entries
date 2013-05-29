@@ -1,9 +1,9 @@
 10
 
 dir
-59663
-svn+ssh://svk@forest.cs.princeton.edu/liberty/svk/repo/trunk/liberty/projects/nightly-regression/401.bzip2/spec_test1/in
-svn+ssh://svk@forest.cs.princeton.edu/liberty/svk/repo
+59878
+svn+ssh://hshah@forest.cs.princeton.edu/liberty/svk/repo/trunk/liberty/projects/nightly-regression/401.bzip2/spec_test1/in
+svn+ssh://hshah@forest.cs.princeton.edu/liberty/svk/repo
 
 
 
@@ -32,7 +32,7 @@ file
 
 
 
-2013-04-01T12:48:48.582131Z
+2013-05-27T05:51:38.713258Z
 482aca08c0b8df3611cca705ded6d5c7
 2012-10-08T14:01:58.565900Z
 57597

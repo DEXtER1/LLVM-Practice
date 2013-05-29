@@ -36,7 +36,15 @@ After:
 
 INPUT: chicken.jpg spec_ref1 
 ============== Without O3 Pass================
---------------Comments: after crash---------
-0.001861
+--------------Comments: first---------
+0.860027
 After:
-0.00168
+0.761913
+--------------Comments: second---------
+0.860569
+After:
+0.738115
+--------------Comments: third---------
+0.862404
+After:
+0.745018

@@ -12,7 +12,7 @@
 DESCRIPTION="SPEC2006/benchspec/input.test"
 SETUP=cp -f ${BENCH_DIR}/spec_train1/in/byoudoin.jpg .
 PREFIX="";
-ARGS=byoudoin.jpg 5
+ARGS=byoudoin.jpg
 CHECK="diff ${RESULT_FILE} ${BENCH_DIR}/spec_test1/out/dryer.jpg.out";
 CLEANUP=rm -f byoudoin.jpg.out; rm -f byoudoin.jpg
 
