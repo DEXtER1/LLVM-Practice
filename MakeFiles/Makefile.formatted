@@ -1,0 +1,774 @@
+.PHONY: avf avf-exe csvp csvp-exe csvp-train plain-ref plain-train plain-test
+
+PLAIN=$(BINARY).plain
+DBG=$(BINARY).dbg
+CANON=$(BINARY)
+RESULT_FILE=$(BINARY).result
+
+EXT?=c
+
+AA?= $(shell aa)
+OBJFILES?= $(shell find . -name \*.$(EXT) |sort | sed -e "s/\.$(EXT)/.o/" )
+OBJFILES_DBG?= $(shell find . -name \*.$(EXT) |sort | sed -e "s/\.$(EXT)/.og/" )
+OBJFILES_BC?= $(shell find . -name \*.$(EXT) |sort | sed -e "s/\.$(EXT)/.bc/" )
+OBJFILES_S?= $(shell find . -name \*.$(EXT) |sort | sed -e "s/\.$(EXT)/.s/" )
+
+BENCH_DIR?= ../
+
+-include ../compile_info
+-include ../execInfo
+
+OPT_BIN=/u/twoh/research/llvm-workspace/llvm-install-opt/bin
+LLVM_CC?= $(OPT_BIN)/clang
+LLVM_CPP?= $(OPT_BIN)/clang++
+LLVM_LINK?= $(OPT_BIN)/llvm-link
+LLVM_LLC?= $(OPT_BIN)/llc
+LLVM_OPT?= $(OPT_BIN)/opt
+LLVM_DIS?= $(OPT_BIN)/llvm-dis
+GCC?= gcc
+LD?= ld
+
+OPT?=-O3
+LLVM_CFLAGS?=-c -emit-llvm $(OPT) $(PREPROCESSING_OPTIONS)
+DBG_CFLAGS?=-g -O0 -c $(PREPROCESSING_OPTIONS)
+
+QUEUES=$(LIBERTY_SMTX_DIR)/sw_queue.noinline.o
+LAMP=$(LIBERTY_SRC_DIR)/lib/LAMP/LAMPlib/hooks/Debug+Asserts/lamp_hooks.o
+EDGEPROFLIB=-L$(LLVM_OBJ_DIR)/Debug+Asserts/lib/ -lprofile_rt
+SPPROFLIB=$(LIBERTY_LIBS_DIR)/libspecprivprofruntime.so
+MEMTRACE=$(LIBERTY_SRC_DIR)/support/mem_trace/
+
+MSCDLIB?= -load $(LIBERTY_LIBS_DIR)/libExclusions.so \
+  -load $(LIBERTY_LIBS_DIR)/libUtil.so \
+  -load $(LIBERTY_LIBS_DIR)/libAnalysis.so \
+  -load $(LIBERTY_LIBS_DIR)/libRecoverTypes.so \
+  -load $(LIBERTY_LIBS_DIR)/libPDG.so \
+  -load $(LIBERTY_LIBS_DIR)/libLoopProf.so \
+  -load $(LIBERTY_LIBS_DIR)/libMetadata.so \
+  -load $(LIBERTY_LIBS_DIR)/libLAMPLoad.so \
+  -load $(LIBERTY_LIBS_DIR)/libSpecPriv.so \
+  -load $(LIBERTY_LIBS_DIR)/libSMTAA.so \
+  -load $(LIBERTY_LIBS_DIR)/libMSCD.so
+LOOPFINDERLIB?= -load $(LIBERTY_LIBS_DIR)/libUtil.so \
+  -load $(LIBERTY_LIBS_DIR)/libLoopFinder.so 
+LOOPPROFLIB?= -load $(LIBERTY_LIBS_DIR)/libUtil.so \
+  -load $(LIBERTY_LIBS_DIR)/libLoopProf.so 
+PLCDLIB?= -load $(LIBERTY_LIBS_DIR)/libUtil.so \
+  -load $(LIBERTY_LIBS_DIR)/libLoopProf.so \
+  -load $(LIBERTY_LIBS_DIR)/libPLCD.so 
+
+LPROF?= -lamp-inst-cnt -lamp-map-loop -lamp-load-profile
+ECPROF?= -profile-info-file=./llvmprof.out -profile-loader
+OPTS= $(LPROF) $(AA) $(ECPROF) $(SPPROF) $(EXTRA)
+
+ifneq ($(PROFCHECK), )
+	PROFCHECKCMD= $(PROFCHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+endif
+
+ifneq ($(CHECK), )
+	CHECKCMD= $(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+endif
+
+ifneq ($(TESTCHECK), )
+	TESTCHECKCMD= $(TESTCHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+endif
+
+ifneq ($(TRAINCHECK), )
+	TRAINCHECKCMD= $(TRAINCHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+endif
+
+###############################################################################
+#******************************************************************************
+#** 
+#** all & clean
+#** 
+#******************************************************************************
+###############################################################################
+
+all: $(CANON).exe
+
+clean:
+	rm -f *.o *.ll *.bc $(BINARY).* $(BINARY).opt.* 
+
+###############################################################################
+#******************************************************************************
+#** 
+#** profile
+#** 
+#******************************************************************************
+###############################################################################
+
+PROFILES=$(CANON).edge.profile $(CANON).lamp.result $(CANON).specpriv.profile.txt $(CANON).loopProf.out
+#PROFILES= $(CANON).edge.profile $(CANON).specpriv.profile.txt $(CANON).loopProf.out
+
+PROFILERS=$(CANON).edge.profile.exe $(CANON).lamp.exe $(CANON).specpriv-profile.exe $(CANON).loopProf.exe
+#PROFILERS= $(CANON).edge.profile.exe $(CANON).edge.profile.exe $(CANON).loopProf.exe
+
+profile : $(PROFILES)
+
+profilers : $(PROFILERS)
+
+save-profile : $(PROFILES)
+	mkdir -p profile-backup
+	cp $(CANON).bc profile-backup/$(CANON).bc.x
+	cp $(PROFILES) profile-backup/
+
+restore-profile : profilers
+	cp profile-backup/$(CANON).edge.profile .
+	cp profile-backup/$(CANON).lamp.result .
+	cp profile-backup/$(CANON).specpriv.profile.txt .
+	cp profile-backup/$(CANON).loopProf.out .
+	touch $(PROFILES)
+
+###############################################################################
+### loop profile
+###############################################################################
+
+%.loopProf.exe: %.bc
+	loop-profile $<
+
+%.loopProf.out: %.loopProf.exe
+	$(TESTSETUP)
+	time ./$*.loopProf.exe $(TESTARGS) > $(RESULT_FILE) 
+	mv loopProf.out $@
+	$(PROFCHECKCMD)
+	$(PROFCLEANUP)
+
+loopprof: $(CANON).loopProf.out
+
+###############################################################################
+### edge profile
+###############################################################################
+
+%.edge.profile.exe: %.edge.profile.o
+	$(GCC) -lm $(EDGEPROFLIB) $(LIBS) $< -o $@
+
+%.edge.profile.bc : %.bc
+	opt -insert-edge-profiling $< -o $@
+
+%.edge.profile : %.edge.profile.exe
+	$(TESTSETUP)
+	time ./$< $(TESTARGS) > $(RESULT_FILE) 
+	mv llvmprof.out $@
+	$(PROFCHECKCMD)
+	$(PROFCLEANUP)
+
+edgeprof: $(CANON).edge.profile
+
+###############################################################################
+### spec-priv profile
+###############################################################################
+
+%.specpriv-profile.exe : %.specpriv-profile.o
+	$(GCC) -lm $(QUEUES) $(SPPROFLIB) -lrt $< -o $@
+
+%.specpriv-profile.bc : %.bc
+	specpriv-profile $<
+
+%.specpriv.profile.txt : %.specpriv-profile.exe
+	$(SETUP)
+	date
+	time ./$< $(ARGS) > $(RESULT_FILE).specpriv 
+	sleep 5
+	mv result.specpriv.profile.txt $@
+	$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	$(CLEANUP)
+
+specprivprof: $(CANON).specpriv.profile.txt
+
+###############################################################################
+### LAMP profile
+###############################################################################
+
+%.lamp.exe : %.bc %.edge.profile
+	cp $*.edge.profile llvmprof.out
+	lamp-profile $*.bc
+	rm -f llvmprof.out *.lamp.lampsample.100-256.1-1.*
+
+%.lamp.result : %.lamp.exe
+	$(SETUP)
+	date
+	time ./$< $(ARGS) > $(RESULT_FILE).lamp 
+	mv result.lamp.profile $*.lamp.result
+	rm -f dout.out lcout.out auxout.out
+	$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	$(CLEANUP)
+
+lamp: $(CANON).lamp.result
+
+###############################################################################
+### CLAMP profile
+###############################################################################
+
+%.clamp.exe : %.bc %.loopProf.out %.edge.profile
+	cp $*.edge.profile llvmprof.out
+	cp $(CANON).loopProf.out loopProf.out
+	clamp-profile $*.bc
+	rm -f llvmprof.out loopProf.out
+
+%.clamp.result : %.clamp.exe
+	$(SETUP)
+	date
+	time ./$< $(ARGS) > $(RESULT_FILE).clamp 
+	$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	$(CLEANUP)
+
+clamp: $(CANON).clamp.result
+
+clamp-clean: 
+	rm -f $(CANON).clamp.exe
+	rm -f $(CANON).clamp.o
+	rm -f $(CANON).clamp.bc
+	rm -f $(CANON).clamp.result
+
+clamp-dbg: $(CANON).bc
+	cp $(CANON).edge.profile llvmprof.out
+	cp $(CANON).loopProf.out loopProf.out
+	GDB=1 clamp-profile $(CANON).bc
+	rm -f llvmprof.out loopProf.out
+
+clamp-exe: $(CANON).clamp.exe
+
+clamp-relink: $(CANON).clamp.o
+	clamp-profile $(CANON).bc 1
+
+###############################################################################
+### PCLAMP profile
+###############################################################################
+
+%.pclamp.bc: %.bc %.loopProf.out %.edge.profile
+	cp $*.edge.profile llvmprof.out
+	cp $(CANON).loopProf.out loopProf.out
+	pclamp-profile $*.bc
+	rm -f llvmprof.out loopProf.out
+
+%.pclamp.o: %.pclamp.bc
+	$(LLVM_LINK) -o tmp0.bc $< $(LIBERTY_LIBS_DIR)/../../lib/PCLAMP/PCLAMPlib/hooks/Debug+Asserts/pclamp_shadow_hooks.bc
+	$(LLVM_OPT) -O3 -o tmp1.bc tmp0.bc
+	$(LLVM_CC) -march=x86-64 -O3 -c tmp1.bc -o $@
+
+%.pclamp.dbg.o: %.pclamp.bc
+	$(LLVM_CC) -march=x86-64 -O0 -c $< -o $@
+	
+%.pclamp.dbg.exe: %.pclamp.dbg.o
+	g++ -o $@ $< $(LIBERTY_LIBS_DIR)/../../lib/PCLAMP/PCLAMPlib/hooks/Debug+Asserts/pclamp_shadow_hooks.o -msse4.1 -lpthread
+
+%.pclamp.exe : %.pclamp.o
+	g++ -O3 $< -o $@ -msse4.1 -lpthread
+
+%.pclamp.result : %.pclamp.exe
+	$(SETUP)
+	date
+	time ./$< $(ARGS) > $(RESULT_FILE).pclamp 
+	date
+	$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	$(CLEANUP)
+
+pclamp: $(CANON).pclamp.result
+
+pclamp.dbg: $(CANON).pclamp.dbg.exe
+	gdb --args $< $(ARGS)
+
+pclamp-clean: 
+	rm -f $(CANON).pclamp.exe
+	rm -f $(CANON).pclamp.o
+	rm -f $(CANON).pclamp.bc
+	rm -f $(CANON).pclamp.result
+
+pclamp-dbg: $(CANON).bc
+	cp $(CANON).edge.profile llvmprof.out
+	cp $(CANON).loopProf.out loopProf.out
+	GDB=1 pclamp-profile $(CANON).bc
+	rm -f llvmprof.out loopProf.out
+
+pclamp-exe: $(CANON).pclamp.exe
+
+pclamp-relink: $(CANON).pclamp.o
+	pclamp-profile $(CANON).bc 1
+
+###############################################################################
+#******************************************************************************
+#** 
+#** DIFT + Value Profile + Specialization
+#** 
+#******************************************************************************
+###############################################################################
+
+CSVPLIB?= -load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libCSVP.so
+CSVPRUNTIME=$(LIBERTY_SRC_DIR)/support/csvp_runtime/csvp_runtime.bc
+VPROF?=avf.tnv.txt
+
+csvp: $(PLAIN).csvp.exe
+	$(SETUP)
+	/usr/bin/time --output=csvp.time -f "%e" ./$< $(ARGS) >$(PLAIN).csvp.out 2>&1
+	$(CHECKCMD)
+	$(CLEANUP)
+
+csvp-train: $(PLAIN).csvp.exe
+	$(TRAINSETUP)
+	/usr/bin/time --output=csvp.train.time -f "%e" ./$< $(TRAINARGS) >$(PLAIN).csvp.out 2>&1
+	$(TRAINCHECKCMD)
+	$(TRAINCLEANUP)
+
+
+csvp-exe: $(PLAIN).csvp.exe
+
+csvp-clean: 
+	rm -f $(PLAIN).csvp.* $(PLAIN).csv.out
+
+%.csvp.exe: %.csvp.bc $(CSVPRUNTIME)
+	$(LLVM_LINK) -o csvp.tmp1.bc $^
+	$(LLVM_CPP) -O3 -o $@ csvp.tmp1.bc
+	rm -f csvp.tmp1.bc
+
+%.csvp.bc: %.bc
+	$(LLVM_OPT) $(CSVPLIB) -csvp --prof=$(VPROF) --stat=false -o csvp.tmp0.bc $<
+	$(LLVM_OPT) -O3 -o $@ csvp.tmp0.bc
+	#rm -f csvp.tmp0.bc
+
+DIFTLIB?= -load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libDIFT.so
+AVFRUNTIME=$(LIBERTY_SRC_DIR)/support/dift_runtime/dift_runtime_avf.bc
+AVFDBGRUNTIME=$(LIBERTY_SRC_DIR)/support/dift_runtime/dift_runtime_avf.o
+
+avf: $(PLAIN).avf.out
+
+avf-exe: $(PLAIN).avf.exe
+
+avf-clean: 
+	rm -f $(PLAIN).avf.* $(PLAIN).avf.out
+
+%.avf.out: %.avf.exe
+	$(TESTSETUP)
+	/usr/bin/time --output=avf.time -f "%e" ./$< $(TESTARGS) >$@ 2>&1
+	cp -f tnv.txt avf.tnv.txt
+	cp -f tnv.above10.txt avf.tnv.above10.txt
+	$(PROFCHECKCMD)
+	$(PROFCLEANUP)
+
+%.avf.exe: %.avf.bc
+	$(LLVM_CC) -O3 -o $@ $<
+
+%.avf.bc: $(AVFRUNTIME) %.avf.prelink.bc
+	$(LLVM_LINK) -o avf.tmp0.bc $^
+	$(LLVM_OPT) -O3 -o $@ avf.tmp0.bc
+
+$(AVFRUNTIME):
+	cd $(LIBERTY_SRC_DIR)/support/dift_runtime; \
+	make TARGET=avf clean; \
+	make TARGET=avf; \
+	cd -
+
+%.avf.prelink.bc: %.bc
+	$(LLVM_OPT) $(DIFTLIB) -dift --tool=avf -o $@ $<	
+
+avf-debug: $(PLAIN).avf.dbg.exe
+	$(TESTSETUP)
+	gdb --args ./$< $(TESTARGS)
+	$(PROFCLEANUP)
+
+%.avf.dbg.exe: $(AVFDBGRUNTIME) %.avf.prelink.o
+	$(GCC) -g -O0 -o $@ $^
+
+$(AVFDBGRUNTIME):
+	cd $(LIBERTY_SRC_DIR)/support/dift_runtime; \
+	make TARGET=avf; clean \
+	make TARGET=avf; \
+	cd -
+
+VFRUNTIME=$(LIBERTY_SRC_DIR)/support/dift_runtime/dift_runtime_vf.bc
+VFDBGRUNTIME=$(LIBERTY_SRC_DIR)/support/dift_runtime/dift_runtime_vf.o
+
+vf: $(PLAIN).vf.out
+
+vf-exe: $(PLAIN).vf.exe
+
+vf-clean: 
+	rm -f $(PLAIN).vf.* $(PLAIN).vf.out
+
+%.vf.out: %.vf.exe
+	$(TESTSETUP)
+	/usr/bin/time --output=vf.time -f "%e" ./$< $(TESTARGS) >$@ 2>&1
+	cp -f tnv.txt vf.tnv.txt
+	cp -f tnv.above10.txt vf.tnv.above10.txt
+	$(PROFCHECKCMD)
+	$(PROFCLEANUP)
+
+%.vf.exe: %.vf.bc
+	$(LLVM_CC) -O3 -o $@ $<
+
+%.vf.bc: $(VFRUNTIME) %.vf.prelink.bc
+	$(LLVM_LINK) -o vf.tmp0.bc $^
+	$(LLVM_OPT) -O3 -o $@ vf.tmp0.bc
+
+$(VFRUNTIME):
+	cd $(LIBERTY_SRC_DIR)/support/dift_runtime; \
+	make TARGET=vf clean; \
+	make TARGET=vf; \
+	cd -
+
+%.vf.prelink.bc: %.bc
+	$(LLVM_OPT) $(DIFTLIB) -dift --tool=vf -o $@ $<	
+
+vf-debug: $(PLAIN).vf.dbg.exe
+	$(TESTSETUP)
+	gdb --args ./$< $(TESTARGS)
+	$(PROFCLEANUP)
+
+%.vf.dbg.exe: $(VFDBGRUNTIME) %.vf.prelink.o
+	$(GCC) -g -O0 -o $@ $^
+
+$(VFDBGRUNTIME):
+	cd $(LIBERTY_SRC_DIR)/support/dift_runtime; \
+	make TARGET=vf clean; \
+	make TARGET=vf; \
+	cd -
+
+###############################################################################
+#******************************************************************************
+#** 
+#** Specialization (IPLS)
+#** 
+#******************************************************************************
+###############################################################################
+
+IPLS_RUNTIME_DIR=/u/twoh/research/liberty/liberty/projects/ipls/benchmarks/runtime
+IPLS_BT_RUNTIME=$(IPLS_RUNTIME_DIR)/tgen_runtime.o
+IPLS_VALUE_RUNTIME=$(IPLS_RUNTIME_DIR)/tbuild_runtime.o
+IPLS_SPEC_RUNTIME_BC=$(IPLS_RUNTIME_DIR)/tspec_runtime.bc
+
+IPLS_BT_LIB=-load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libTPevalTGen.so
+IPLS_VALUE_LIB=-load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libTPevalTBuild.so
+IPLS_CODEGEN_LIB=-load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libTPevalCodegen.so
+
+TARGETFILE?=target.txt
+CUTOFF?=0
+
+IPLS_BT_OUT?=ipls.bt.out
+IPLS_VAL_OUT?=trace.bin
+IPLS_PD_OUT?=ipls.pd.out
+
+ipls: ipls-spec
+
+ipls-clean:
+	rm -f $(IPLS_BT_OUT) $(IPLS_VAL_OUT) $(IPLS_PD_OUT)
+
+###############################################################################
+### binding-time profile
+###############################################################################
+
+ipls-bt: $(IPLS_BT_OUT)
+
+ipls-bt-exe: $(CANON).ipls.bt.exe
+
+$(IPLS_BT_OUT): $(CANON).ipls.bt.exe
+	./$(CANON).ipls.bt.exe $(ARGS) > $(IPLS_BT_OUT)
+
+%.ipls.bt.exe: %.ipls.bt.o
+	$(GCC) -o $@ $(LDFLAGS) $< $(LIBS) $(IPLS_BT_RUNTIME)
+
+%.ipls.bt.o: %.ipls.bt.bc
+	$(LLVM_CC) -march=x86-64 -O3 -c $< -o $@
+
+%.ipls.bt.bc: %.bc $(TARGETFILE)
+	$(OPT_BIN)/opt $(IPLS_BT_LIB) -tgen -target=$(TARGETFILE) $< -o .tmp0
+	$(OPT_BIN)/opt -O3 -o $@ .tmp0
+
+###############################################################################
+### IPLS value profile
+###############################################################################
+
+ipls-value: $(IPLS_VAL_OUT)
+
+ipls-value-exe: $(CANON).ipls.value.exe
+
+$(IPLS_VAL_OUT): $(CANON).ipls.value.exe
+	./$(CANON).ipls.value.exe $(ARGS)
+
+%.ipls.value.exe: %.ipls.value.o
+	$(GCC) -o $@ $(LDFLAGS) $< $(LIBS) $(IPLS_VALUE_RUNTIME)
+
+%.ipls.value.o: %.ipls.value.bc
+	$(LLVM_CC) -march=x86-64 -O3 -c $< -o $@
+
+%.ipls.value.bc: %.bc $(TARGETFILE) $(IPLS_BT_OUT)
+	$(OPT_BIN)/opt $(IPLS_VALUE_LIB) -tbuild -target=$(TARGETFILE) -tgenout=$(IPLS_BT_OUT) $< -o .tmp0
+	$(OPT_BIN)/opt -O3 -o $@ .tmp0
+
+###############################################################################
+### pattern detection
+###############################################################################
+
+ipls-pd: $(IPLS_PD_OUT)
+
+$(IPLS_PD_OUT): $(IPLS_VAL_OUT)
+	pattern_detector $(IPLS_VAL_OUT) $(IPLS_PD_OUT)
+
+###############################################################################
+### specialized code generation
+###############################################################################
+
+ipls-spec: $(CANON).ipls.spec.exe
+
+%.ipls.spec.exe: %.ipls.spec.o
+	$(GCC) -o $@ $(LDFLAGS) $< $(LIBS) $(IPLS_VALUE_RUNTIME)
+
+%.ipls.spec.o: %.ipls.spec.bc
+	$(LLVM_CC) -march=x86-64 -O3 -c $< -o $@
+
+%.ipls.spec.bc: %.ipls.spec.naive.bc
+	$(OPT_BIN)/opt -loop-simplify -O3 -o $@ $<
+
+%.ipls.spec.naive.bc: %.ipls.spec.noruntime.bc
+	$(LLVM_LINK) $< $(IPLS_SPEC_RUNTIME_BC) -o $@
+
+%.ipls.spec.noruntime.bc: %.bc $(TARGETFILE) $(IPLS_PD_OUT)
+	$(OPT_BIN)/opt $(IPLS_CODEGEN_LIB) -tpeval-codegen -target=$(TARGETFILE) -metaloop=$(IPLS_PD_OUT) $< -o $@
+
+###############################################################################
+#******************************************************************************
+#** 
+#** experimental passes
+#** 
+#******************************************************************************
+###############################################################################
+
+###############################################################################
+####
+####Super Block Tail Duplication -SBTD
+####
+###############################################################################
+
+SBTDLIB?= -load $(LIBERTY_LIBS_DIR)/HKTailDuplication.so
+
+sbtdexe: $(PLAIN).sbtd.exe
+
+sbtd-clean: 
+	rm -f $(PLAIN).sbtd.* $(PLAIN).sbtd.out
+
+%.sbtd.exe: %.sbtd.bc
+	$(LLVM_CPP) -O3 -o $@ sbtd.tmp0.bc
+#	rm -f sbtd.tmp1.bc
+
+%.sbtd.bc: %.bc
+	$(LLVM_OPT) $(SBTDLIB) -HKtaildupl -o sbtd.tmp0.bc $<
+	$(LLVM_OPT) -O3 -o $@ sbtd.tmp0.bc
+	#rm -f sbtd.tmp0.bc
+
+############# Insert Edge Profiling ##############
+
+edge-exe: $(PLAIN).edge.exe
+
+%.edge.exe:%prof.bc
+	$(LLVM_CPP) -O3 -o $@ sbtd.tmp0.bc
+
+%.prof.bc:%.bc
+	$(LLVM_OPT) -insert-edge-profiling -f -o edge.tmp0.bc $<
+	$(LLVM_OPT) -O3 -o $@ edge.tmp0.bc
+
+
+###############################################################################
+### BufferTracker
+###############################################################################
+
+BUFFERTRACK_LIB=-load $(LIBERTY_LIBS_DIR)/libUtil.so -load $(LIBERTY_LIBS_DIR)/libTPevalTGen.so
+
+%.buffertracker.exe: %.bc %.loopProf.out
+	cp $(CANON).loopProf.out loopProf.out
+	buffertracker $*.bc
+	rm -f loopProf.out
+
+%.memuser.out: %.buffertracker.exe
+	$(SETUP)
+	date
+	time ./$< $(ARGS) > $(RESULT_FILE).buffertrack
+	$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	mv memuser.out $*.memuser.out
+	$(CLEANUP)
+
+bt: $(CANON).memuser.out
+
+bt-clean:
+	rm -f $(CANON).buffertracker.exe
+	rm -f $(CANON).buffertracker.o
+	rm -f $(CANON).buffertracker.bc
+	rm -f $(CANON).memuser.out
+
+###############################################################################
+### mscd
+###############################################################################
+
+mscd: $(PROFILES) $(CANON).mscd.exe
+	rm -f *.mscd.*
+
+mscddbg: $(CANON).mscd.bc.dbg
+
+%.mscd.bc: %.bc
+	cp $(CANON).edge.profile llvmprof.out
+	cp $(CANON).lamp.result result.lamp.profile
+	cp $(CANON).specpriv.profile.txt result.specpriv.profile.txt
+	cp $(CANON).loopProf.out loopProf.out
+	date
+	time $(LLVM_OPT) $(MSCDLIB) $(OPTS) -mscd -target-min-iters=1 -debug-only=callsite-depth-combinator-aa -o $@ $< 
+	$(LLVM_DIS) $@
+
+%.mscd.bc.dbg : %.bc
+	cp $(CANON).edge.profile llvmprof.out
+	cp $(CANON).lamp.result result.lamp.profile
+	cp $(CANON).specpriv.profile.txt result.specpriv.profile.txt
+	cp $(CANON).loopProf.out loopProf.out
+	gdb --args opt $(MSCDLIB) $(OPTS) $< -mscd -debug-only=mscd 
+
+###############################################################################
+### plcd
+###############################################################################
+
+plcd: $(CANON).mt.loopProf.out $(CANON).plcd.exe
+
+plcdclean: 
+	rm -f $(CANON).plcd.exe
+
+%.mt.bc: %.bc
+	$(LLVM_LINK) $< $(MEMTRACE)/mem_trace.bc -o tmp0.bc
+	opt -loop-simplify tmp0.bc -o $@
+
+%.plcd.exe: %.plcd.o
+	$(GCC) -lm $(LIBS) $< -o $@
+
+%.plcd.bc: %.mt.bc
+	cp $(CANON).mt.loopProf.out loopProf.out
+	$(LLVM_OPT) $(PLCDLIB) -plcd -debug-only=plcd -O3 -o $@ $<
+	$(LLVM_DIS) $@
+
+###############################################################################
+#******************************************************************************
+#** 
+#** auxiliary information
+#** 
+#******************************************************************************
+###############################################################################
+
+###############################################################################
+### loop finder 
+###############################################################################
+
+findloop: $(CANON).bc
+	$(LLVM_OPT) $(LOOPFINDERLIB) $< -find-loop > /dev/null
+
+findloopdbg: $(CANON).bc
+	gdb --args opt $(LOOPFINDERLIB) $< -find-loop 
+
+###############################################################################
+### loop prof result 
+###############################################################################
+
+targetloops: $(CANON).bc
+	$(LLVM_OPT) $(LOOPPROFLIB) $< -loop-prof-dump=true -debug-only=targets -targets
+
+###############################################################################
+### cfg
+###############################################################################
+
+cfg: $(PLAIN).bc
+	$(LLVM_OPT) -dot-cfg-only $<
+
+###############################################################################
+#******************************************************************************
+#** 
+#** general stuffs
+#** 
+#******************************************************************************
+###############################################################################
+
+###############################################################################
+### basics
+###############################################################################
+
+%.bc: %.c
+	$(LLVM_CC) $(LLVM_CFLAGS) $< -o $@
+
+%.og: %.c
+	$(GCC) $(DBG_CFLAGS) $< -o $@
+
+%.o: %.bc
+	$(LLVM_CC) -march=x86-64 -O3 -c $< -o $@
+
+%.exe: %.o
+	$(GCC) $(LDFLAGS) -lm $(LIBS) $< -o $@
+
+%.o3.bc: %.bc
+	$(LLVM_OPT) -O3 $< -o $@
+
+%.ll: %.bc
+	$(LLVM_DIS) -o $@ $<
+
+###############################################################################
+### plain
+###############################################################################
+
+plain-test: $(PLAIN).exe
+	$(TESTSETUP)
+	/usr/bin/time --output=plain.test.time -f "%e" ./$< $(TESTARGS) >$(RESULT_FILE) 2>&1
+	$(TESTCHECKCMD)
+	$(TESTCLEANUP)
+
+plain-train: $(PLAIN).exe
+	$(TRAINSETUP)
+	/usr/bin/time --output=plain.train.time -f "%e" ./$< $(TRAINARGS) >$(RESULT_FILE) 2>&1
+	$(TRAINCHECKCMD)
+	$(TRAINCLEANUP)
+
+plain-ref: $(PLAIN).exe
+	$(SETUP)
+	/usr/bin/time --output=plain.ref.time -f "%e" ./$< $(ARGS) >$(RESULT_FILE) 2>&1
+	$(CHECKCMD)
+	$(CLEANUP)
+
+$(PLAIN).bc : $(OBJFILES_BC)
+	$(LLVM_LINK) $(LLVM_LINK_FLAGS) $(OBJFILES_BC) -o tmp0.bc   # link objects into one .bc
+	mv tmp0.bc $@
+
+###############################################################################
+### debug
+###############################################################################
+
+$(DBG).o : $(OBJFILES_DBG)
+	$(LD) -o $@ -r $^
+
+###############################################################################
+### canonicalize
+###############################################################################
+
+%.internalized.bc : %.bc
+	date
+	time $(LLVM_OPT) $< -internalize -ipconstprop -ipsccp -deadargelim -partial-inliner -o $@
+
+%.devirt.bc : %.bc
+	date
+	time devirtualize $<
+	$(LLVM_DIS) $@
+
+%.loopsimplified.bc : %.bc
+	date
+	time opt -O3 -loop-simplify -indvars $< -o $@
+
+%.specpriv-demote.bc : %.bc
+	date
+	DEBUG=nodebug time specpriv-demote-redux $< $(PAR_FUNCTION) $(LOOP)				# demote register reductions to memory
+
+%.named.bc : %.bc
+	date
+	time opt $< -o $@ -load $(LIBERTY_LIBS_DIR)/libMetadata.so -metadata-namer
+
+$(CANON).bc : $(PLAIN).o3.internalized.devirt.loopsimplified.specpriv-demote.named.bc
+	cp $< $@
+	#llc $@ -o $(CANON).s
+	#$(GCC) -lm $(CANON).s -o $(CANON).exe
+	#$(VERIFIED)
+
+exe: $(CANON).exe
+
+exec: $(CANON).exe
+	$(SETUP)
+	time ./$< $(ARGS) > $(RESULT_FILE) 
+	@$(CHECK); if [ $$? -eq 0 ] ; then echo "*** result OK" ; else echo "*** result wrong" ; fi
+	$(CLEANUP)
