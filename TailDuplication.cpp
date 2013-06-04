@@ -18,9 +18,12 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/CFG.h"
+#include "llvm/ADT/Statistic.h"
 #include <stack>
 using namespace llvm;
 
+  STATISTIC(TailDuplicated,"No of Tail Duplication Instances");
+  STATISTIC(BlocksDuplicated,"No of Total blocks duplicated");
 namespace {
 
   class TailDuplication : public FunctionPass {
@@ -54,7 +57,6 @@ namespace {
    bool TailDuplication :: runOnFunction (Function &F)
       {
 
-
         PI = &getAnalysis<ProfileInfo>();
         //Clear hottrace and merge_blocks
         hot_trace.clear();
@@ -69,7 +71,6 @@ namespace {
         //Calculate the Loop Backedges and set them in BackEdges
 
         FindFunctionBackedges(F,BackEdges);
-
 
         while (true)//Come out of the Loop using break whenever a condition for termination is met and the hottrace is formed completely.
           {
@@ -90,13 +91,18 @@ namespace {
 
             //Code for next Basic Block in Hot trace.
             if (getNextBasicBlock(bb))
+              {
                 bb = nxtBlck;
+               }
             else
+              {
+                DEBUG(errs()<<"\nProblem detected here");
                 break;
+              }
           }//while Loop
 
         //-------Testing Trace----------
-//        testTrace();
+        testTrace();
         //------------------------------
 
         //Code for Tail Duplication
@@ -121,7 +127,7 @@ namespace {
       {
 
       // Traverse every Basic blocks present in the merge block and call clone functions on it
-
+        #define DEBUG_TYPE "letsee"
         DEBUG(errs()<<"\n---Merge Blocks ---\n");
         for ( int i = 0; i<(int)merge_blocks.size(); i++)
           {
@@ -130,7 +136,7 @@ namespace {
                   BasicBlock *bbtoclone = merge_blocks.at(i);
 
                   //Detect if the block is a landing pad. If so it should be ignored for tail duplication
-                  if(!bbtoclone->isLandingPad())
+                  if(bbtoclone->isLandingPad())
                   {
                     DEBUG(errs()<<"\nBasic Block :"<<bbtoclone->getName()<<"Skipped as it is a Landing Pad");
                     continue;
@@ -147,10 +153,10 @@ namespace {
 
                     }
 
-//                  DEBUG(errs()<<"\nBasic Blocks for Tail Duplication "<<bbtoclone->getName());
+                  DEBUG(errs()<<"\nBasic Blocks for Tail Duplication "<<bbtoclone->getName());
                   ValueToValueMapTy VMap;
                   BasicBlock* clonedBB = CloneBasicBlock(bbtoclone, VMap, ".clone",&F);
-
+                  BlocksDuplicated++;
                   //Perform the ReMapping of Clonedinstructions
                   for (BasicBlock::iterator I = clonedBB->begin(); I != clonedBB->end(); ++I)
                     {
@@ -191,7 +197,14 @@ namespace {
                                   break;
                                 }
                           }
+                    //Call removepredecessor on the block to be cloned for each of the other predecessor
+                    // This done so that the phi nodes in the block are updated
+
                     }//While loop on merge_other_pred
+
+    // Call Remove Predecessor on the new cloned block to remove the blocks that are present in hot_trace.
+//By doing so, each the new and the old block will have unique predecessors and the problem of PHI nodes will also get solved
+
 
           }//For Loop for all merge blocks in the vector
         DEBUG(errs()<<"\n----------------\n");
@@ -246,11 +259,11 @@ namespace {
                       {
                           hot_trace.push_back(bb);
                           merge_blocks.push_back(bb);
+                          TailDuplicated++;
                       }
                     else
                       {
                           DEBUG("\nThis is not a merge block");
-                          return;
                       }
 
               }//else more than one predecessor
@@ -259,7 +272,12 @@ namespace {
     bool  TailDuplication::getNextBasicBlock(BasicBlock * bb) // Returns the next basic block from the numerous successors based on the number of executions
       {
 
+                DEBUG(errs()<<"\nNext Basic Block:"<<bb->getName());
             int maxexecution=0;
+            //Check if it has any successor or not:
+            if((bb->getTerminator()->getNumSuccessors())==0)
+              return false;
+
             for (succ_iterator SI = succ_begin(bb), E = succ_end(bb); SI != E; ++SI) //find the One from many successor for hot trace.
               {
                 BasicBlock *temp= *SI;
@@ -267,19 +285,20 @@ namespace {
                  {
                     maxexecution = (int)PI->getExecutionCount(temp);
                     nxtBlck = temp;
+                    DEBUG(errs()<<"\nMax Execution count"<<maxexecution << "Basic Blck: \t \t" <<nxtBlck->getName());
                  }
               }
 
               //Check if the block is revisited block
-
-             if (std::find(hot_trace.begin(), hot_trace.end(),nxtBlck)!=hot_trace.end())
+//ERROR PRONE
+             if (std::find(hot_trace.begin(), hot_trace.end(),nxtBlck)==hot_trace.end())
                {
-                  DEBUG(errs()<<"\n--Node Selected is :"<<nxtBlck->getName());
+                  DEBUG(errs()<<"\n--Node Selected is :");
                   return true;
                }
              else
                {
-                 DEBUG(errs()<<">>>>>>>>>>>>Block Revisited\n---------------------------------------------------------------");
+                 DEBUG(errs()<<">----->>>>>>>>>>>Block Revisited\n---------------------------------------------------------------");
                  return false;//Trace complete.
                }
       }
