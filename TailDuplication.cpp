@@ -108,6 +108,7 @@ namespace {
         //Code for Tail Duplication
         perfTailDupl(F);
         //-------------------------
+        F.dump();
         return true;
       }
 
@@ -129,10 +130,11 @@ namespace {
       // Traverse every Basic blocks present in the merge block and call clone functions on it
         #define DEBUG_TYPE "letsee"
         DEBUG(errs()<<"\n---Merge Blocks ---\n");
+        std::stack<BasicBlock*> merge_other_pred;
+        std::stack<BasicBlock*> merge_hottrace_pred;
         for ( int i = 0; i<(int)merge_blocks.size(); i++)
           {
              DEBUG(errs()<<"\n---------->>Merge Block Count:  "<<i<<"Block Name:"<< merge_blocks.at(i)->getName());
-                  std::stack<BasicBlock*> merge_other_pred;
                   BasicBlock *bbtoclone = merge_blocks.at(i);
 
                   //Detect if the block is a landing pad. If so it should be ignored for tail duplication
@@ -151,24 +153,56 @@ namespace {
                           merge_other_pred.push (temp);      //Storing corresponding parents of the basic block
                         }
 
+                        else
+                        {
+                          merge_hottrace_pred.push(temp);
+                        }
                     }
 
                   DEBUG(errs()<<"\nBasic Blocks for Tail Duplication "<<bbtoclone->getName());
                   ValueToValueMapTy VMap;
                   BasicBlock* clonedBB = CloneBasicBlock(bbtoclone, VMap, ".clone",&F);
                   BlocksDuplicated++;
-                  //Perform the ReMapping of Clonedinstructions
+
+                  //Second Loop Perform the ReMapping of Clonedinstructions
                   for (BasicBlock::iterator I = clonedBB->begin(); I != clonedBB->end(); ++I)
                     {
-                      //Loop over all the operands of the instruction
-                      for (unsigned op=0, E = I->getNumOperands(); op != E; ++op)
+                      if (isa<PHINode>(I))
                         {
-                          const Value *Op = I->getOperand(op);
-                          //Get it out of the value map
-                          Value *V = VMap[Op];
-                          //If not in the value map, then its outside our trace so ignore
-                          if(V != 0)
-                            I->setOperand(op,V);
+                            //Update PHI Node for BBClone - remove the un
+                            PHINode *PN = cast<PHINode>(I);
+
+                            DEBUG(errs()<<"\n PHI Node Detected: "<< *I);
+//                            DEBUG(errs()<<"\n PHI node operands: "<<;
+
+                            if ( PN->getBasicBlockIndex(merge_hottrace_pred.top()) != -1 ){
+                              PN->removeIncomingValue(merge_hottrace_pred.top());
+                            }
+                            DEBUG(errs()<<"\n PHI Node After changes: "<< *I);
+/*
+                            //get incoming value for the previous BB
+                            Value *V = PN->getIncomingValueForBlock(*(T-1));
+                            assert(V && "No incoming value from a BasicBlock in our trace!");
+
+                            //remap our phi node to point to incoming value
+                            ValueMap[*&I] = V;
+                            //remove phi node
+                            clonedBlock->getInstList().erase(PN);
+
+*/
+                        }
+                      else
+                        {
+                            //Loop over all the operands of the instruction
+                          for (unsigned op=0, E = I->getNumOperands(); op != E; ++op)
+                          {
+                            const Value *Op = I->getOperand(op);
+                            //Get it out of the value map
+                            Value *V = VMap[Op];
+                            //If not in the value map, then its outside our trace so ignore
+                            if(V != 0)
+                              I->setOperand(op,V);
+                          }
                         }
                     }//For Loop Basic Block iterator
 
@@ -183,12 +217,18 @@ namespace {
                         merge_other_pred.pop();
                         unsigned pos;
 
+                  for (pred_iterator PI = pred_begin(bbtoclone), E = pred_end(bbtoclone); PI != E; ++PI) //Traversing each predecessor
+                    {
+                      BasicBlock *BI=*PI;
+                      DEBUG(errs()<<"\n Predecessor Iterator Running"<< BI->getName());
+                    }
+                        DEBUG(errs()<<"\n---`:Predecessor "<<pred->getName()<<" Attempting Removal");
+                        bbtoclone->removePredecessor(pred);
                         TerminatorInst *pred_term = pred->getTerminator();
                         DEBUG(errs()<<"\n-------Terminator Instruction Merge Predecessor blocks "<<*pred_term);
                         unsigned e = pred_term->getNumSuccessors();
                         for (pos = 0; pos<=e ; pos++)
                           {
-
                               DEBUG(errs()<<"\n----Operand ["<<pos<<"]"<<pred_term->getOperand(pos)->getName());
                               if (pred_term->getOperand(pos) == bbtoclone)
                                 {
@@ -198,14 +238,36 @@ namespace {
                                 }
                           }
                     //Call removepredecessor on the block to be cloned for each of the other predecessor
-                    // This done so that the phi nodes in the block are updated
+                   // This done so that the phi nodes in the block are updated
 
                     }//While loop on merge_other_pred
 
     // Call Remove Predecessor on the new cloned block to remove the blocks that are present in hot_trace.
 //By doing so, each the new and the old block will have unique predecessors and the problem of PHI nodes will also get solved
 
+/*                  for (pred_iterator PI = pred_begin(clonedBB), E = pred_end(clonedBB); PI != E; ++PI) //Traversing each predecessor
+                    {
+                      BasicBlock *BI=*PI;
+                     DEBUG(errs()<<"\n Cloned BB: Predecessor Iterator Running"<< BI->getName());
+                    }
 
+
+                  for (pred_iterator PI = pred_begin(bbtoclone), E = pred_end(bbtoclone); PI != E; ++PI) //Traversing each predecessor
+                    {
+                      BasicBlock *BI=*PI;
+                     DEBUG(errs()<<"\n bbtoclone: Predecessor Iterator Running"<< BI->getName());
+                    }
+
+          while(merge_hottrace_pred.size()!=0)
+          {
+            DEBUG(errs()<<"\n##@#@#$@#$");
+
+                     DEBUG(errs()<<"Predecessor "<<merge_hottrace_pred.top()->getName()<<" Attempting Removal");
+            clonedBB->removePredecessor(merge_hottrace_pred.top());
+            merge_hottrace_pred.pop();
+          }
+
+*/
           }//For Loop for all merge blocks in the vector
         DEBUG(errs()<<"\n----------------\n");
 
@@ -263,7 +325,7 @@ namespace {
                       }
                     else
                       {
-                          DEBUG("\nThis is not a merge block");
+                          DEBUG(errs()<<"\nThis is not a merge block");
                       }
 
               }//else more than one predecessor
