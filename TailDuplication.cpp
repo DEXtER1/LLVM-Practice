@@ -6,6 +6,7 @@
 // ->>>Hot trace is Generated
 // STACK::merge_blocks-  elements on the trace eligible for tail duplication and
 
+        #define DEBUG_TYPE "letsee"
 // Next Step: For Each element in the Stack One Tail Duplication is performed
 // For each basic block, clone th basic block
 // Set the predecessor and terminator of each blocks to complete the chain
@@ -74,22 +75,18 @@ namespace {
 
         while (true)//Come out of the Loop using break whenever a condition for termination is met and the hottrace is formed completely.
           {
-
-
-              //Print out the name of the basic block, number of instructions, and the Execution count
-              DEBUG(errs() << "\n==========Hot trace:" << bb->getName() << "---"<<(int)PI->getExecutionCount(bb)<<"--");
-              for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI)
-                { //Traversing each predecessor
-                    BasicBlock *Pred = *PI;
-                    DEBUG(errs()<<" ;"<<Pred->getName());
-                }
-
-              //------------------
-
-            //Code for num predecessors.
+            //Print out the name of the basic block, number of instructions, and the Execution count
+            DEBUG(errs() << "\n==========Hot trace:" << bb->getName() << "---"<<(int)PI->getExecutionCount(bb)<<"--");
+            for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI)
+              {
+                  //Traversing each predecessor
+                  BasicBlock *Pred = *PI;
+                  DEBUG(errs()<<" ;"<<Pred->getName());
+              }
+            //------------------
+            //Check num predecessors.
             checkNumPredecessors(bb);
-
-            //Code for next Basic Block in Hot trace.
+            //Next Basic Block in Hot trace.
             if (getNextBasicBlock(bb))
               {
                 bb = nxtBlck;
@@ -108,13 +105,13 @@ namespace {
         //Code for Tail Duplication
         perfTailDupl(F);
         //-------------------------
+
         F.dump();
         return true;
       }
 
     void TailDuplication::testTrace()
       {
-
         //------------Hot Trace Formation complete ------
         DEBUG(errs()<<"\n---Hot trace ---\n");
         for ( int i = 0; i< (int)hot_trace.size(); i++)
@@ -122,13 +119,12 @@ namespace {
         DEBUG(errs()<<"||");
         DEBUG(errs()<<"\n\n----------------");
         //-----
-      }
+        }
 
     void TailDuplication::perfTailDupl(Function &F)
       {
 
-      // Traverse every Basic blocks present in the merge block and call clone functions on it
-        #define DEBUG_TYPE "letsee"
+        // Traverse every Basic blocks present in the merge block and call clone functions on it
         DEBUG(errs()<<"\n---Merge Blocks ---\n");
         std::stack<BasicBlock*> merge_other_pred;
         std::stack<BasicBlock*> merge_hottrace_pred;
@@ -149,14 +145,9 @@ namespace {
                       BasicBlock *temp = *PI;
                       //If the blocks are in hot trace do not push them in stack
                       if (std::find(hot_trace.begin(), hot_trace.end(),temp)==hot_trace.end())
-                        {
-                          merge_other_pred.push (temp);      //Storing corresponding parents of the basic block
-                        }
-
-                        else
-                        {
-                          merge_hottrace_pred.push(temp);
-                        }
+                        merge_other_pred.push (temp);      //Storing corresponding parents of the basic block
+                      else
+                        merge_hottrace_pred.push(temp);
                     }
 
                   DEBUG(errs()<<"\nBasic Blocks for Tail Duplication "<<bbtoclone->getName());
@@ -169,31 +160,26 @@ namespace {
                     {
                       if (isa<PHINode>(I))
                         {
-                            //Update PHI Node for BBClone - remove the un
-                            PHINode *PN = cast<PHINode>(I);
-
-                            DEBUG(errs()<<"\n PHI Node Detected: "<< *I);
-//                            DEBUG(errs()<<"\n PHI node operands: "<<;
-
-                            if ( PN->getBasicBlockIndex(merge_hottrace_pred.top()) != -1 ){
+                          //Update PHI Node for BBClone
+                          PHINode *PN = cast<PHINode>(I);
+                          DEBUG(errs()<<"\n PHI Node Detected: "<< *I);
+                          if ( PN->getBasicBlockIndex(merge_hottrace_pred.top()) != -1 )
+                            {
                               PN->removeIncomingValue(merge_hottrace_pred.top());
                             }
-                            DEBUG(errs()<<"\n PHI Node After changes: "<< *I);
-/*
-                            //get incoming value for the previous BB
-                            Value *V = PN->getIncomingValueForBlock(*(T-1));
-                            assert(V && "No incoming value from a BasicBlock in our trace!");
+                          DEBUG(errs()<<"\n PHI Node After changes: "<< *I);
 
-                            //remap our phi node to point to incoming value
-                            ValueMap[*&I] = V;
-                            //remove phi node
-                            clonedBlock->getInstList().erase(PN);
-
-*/
+                          //Insert the blocks that are predecessors based on Vmap value I think
+                          for (pred_iterator PI = pred_begin(clonedBB), E = pred_end(clonedBB); PI != E; ++PI) //Traversing each predecessor
+                            {
+                              BasicBlock *BI=*PI;
+                              DEBUG(errs()<<"\n-----Cloned BB Predecessor Iterator Running:"<< BI->getName());
+                              DEBUG(errs()<<"---Index in PHI Node:"<<PN->getBasicBlockIndex(BI));
+                            }
                         }
                       else
                         {
-                            //Loop over all the operands of the instruction
+                          //Loop over all the operands of the instruction
                           for (unsigned op=0, E = I->getNumOperands(); op != E; ++op)
                           {
                             const Value *Op = I->getOperand(op);
@@ -217,13 +203,17 @@ namespace {
                         merge_other_pred.pop();
                         unsigned pos;
 
-                  for (pred_iterator PI = pred_begin(bbtoclone), E = pred_end(bbtoclone); PI != E; ++PI) //Traversing each predecessor
+/*                 for (pred_iterator PI = pred_begin(bbtoclone), E = pred_end(bbtoclone); PI != E; ++PI) //Traversing each predecessor
                     {
                       BasicBlock *BI=*PI;
                       DEBUG(errs()<<"\n Predecessor Iterator Running"<< BI->getName());
                     }
-                        DEBUG(errs()<<"\n---`:Predecessor "<<pred->getName()<<" Attempting Removal");
+*/
+                    //Call removepredecessor on the block to be cloned for each of the other predecessor
+                   // This done so that the phi nodes in the block are updated
                         bbtoclone->removePredecessor(pred);
+
+                       DEBUG(errs()<<"\n---`:Predecessor "<<pred->getName()<<" Removed from bbtoclone");
                         TerminatorInst *pred_term = pred->getTerminator();
                         DEBUG(errs()<<"\n-------Terminator Instruction Merge Predecessor blocks "<<*pred_term);
                         unsigned e = pred_term->getNumSuccessors();
@@ -237,8 +227,9 @@ namespace {
                                   break;
                                 }
                           }
-                    //Call removepredecessor on the block to be cloned for each of the other predecessor
-                   // This done so that the phi nodes in the block are updated
+
+            //Left Include code to update the successors of the cloned block that are not in hot trace
+
 
                     }//While loop on merge_other_pred
 
@@ -268,9 +259,59 @@ namespace {
           }
 
 */
+
+//Insert PHI nodes if the successor of the cloned block has more than one predecessor; modify if it already has a phi node in place
+//Do this for each of teh successor of the Cloned block
+
+   int i=0;
+   DEBUG(errs()<<"\n--The total Number of successors for the cloned block are:" << (clonedBB->getTerminator()->getNumSuccessors()));
+      for (succ_iterator SI = succ_begin(clonedBB), E = succ_end(clonedBB); SI != E; ++SI) //find the One from many successor for hot trace.
+              {
+                BasicBlock *temp= *SI;
+                ++i;
+                //For each successor check the number of predecessor
+                  int j=0;
+                  for (BasicBlock::iterator I = temp->begin(); I !=temp->end(); ++I)
+                     {
+                     if (isa<PHINode>(I))
+                       {
+                         //Update PHI Node for BBClone.
+                         PHINode *phi = cast<PHINode>(I);
+                         DEBUG(errs()<<"\n--------------------------------------------------------------------");
+                         DEBUG(errs()<<"\n---> PHI Node Detected: "<< *I << "in Successor: "<<temp->getName());
+                         DEBUG(errs()<<"\n--------------------------------------------------------------------");
+                         //Code to insert those basic blocks that are not already present in the PHI CODE.
+                         /// getNumIncomingValues - Return the number of incoming edges
+
+                        for (int t=0;t< phi->getNumIncomingValues();t++)
+                            {
+                              DEBUG(errs()<<"\n####Incoming Value number:"<<*(phi->getIncomingValue(t)));
+                            }
+                           phi->addIncoming(phi->getIncomingValueForBlock(bbtoclone), clonedBB);
+
+                         DEBUG(errs()<<"\n##########");
+                         DEBUG(errs()<<"\n---> PHI Node After adding cloned block: "<< *I << "in Successor: "<<temp->getName());
+                         DEBUG(errs()<<"\n--------------------------------------------------------------------");
+                       }
+                     else
+                      {
+                        // Code to Create new phi node and insert it in the beginneing of the code
+
+
+        #define DEBUG_TYPE "letsee"
+                        //
+                        continue;
+                      }
+                     }
+                  for (pred_iterator pi = pred_begin(temp), e = pred_end(temp); pi != e; ++pi) //traversing each predecessor
+                     {
+                        BasicBlock *BB = *pi;
+                        DEBUG(errs()<<"\n---> Successor No: "<< i <<"  "<< temp->getName() <<"-- Predecessor No:("<< ++j <<"): "<< BB->getName());
+                     }
+
+               }
           }//For Loop for all merge blocks in the vector
         DEBUG(errs()<<"\n----------------\n");
-
 
      }//Perform Tail Duplication function
 
@@ -295,19 +336,19 @@ namespace {
                   //Traverse each predecessors and calculate unique Predecessors by matching them with back edges
                   DEBUG(errs()<<"\n]]]]]]]]]] Predecessors :");
                   BasicBlock *temp;
-                  for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) //Traversing each predecessor
+                  for (pred_iterator pi = pred_begin(bb), e = pred_end(bb); pi != e; ++pi) //traversing each predecessor
                      {
 
                           uniquePredecessor++;
-                          temp = *PI;
+                          temp = *pi;
                           //Compare each predecessor with back edge
                           //SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,32 > BackEdges;
-                          for (unsigned i=0; i <BackEdges.size();i++)
+                          for (unsigned i=0; i<BackEdges.size(); i++)
                             {
 
-                              if (BackEdges[i].second == bb) //Check "to" block == merge block
+                              if (BackEdges[i].second == bb) // Check "to" block == merge block
                                 {
-                                  if (BackEdges[i].first == temp) //check "from" condition == predecessor block
+                                  if (BackEdges[i].first == temp) // Check "from" condition == predecessor block
                                      {
                                         uniquePredecessor--;
                                         DEBUG(errs()<<"\n****Back Edges from:"<< BackEdges[i].first->getName()<<"\tto:"<<BackEdges[i].second->getName());
