@@ -392,24 +392,24 @@ namespace {
             //Check if it has any successor or not:
             if((bb->getTerminator()->getNumSuccessors())==0)
               return false;
-DEBUG(errs() << "Has more than one successor\n");
+            DEBUG(errs() << "Has more than one successor\n");
             for (succ_iterator SI = succ_begin(bb), E = succ_end(bb); SI != E; ++SI) //find the One from many successor for hot trace.
               {
 
                  BasicBlock *temp= *SI;
 //                 const double wt = PI->getEdgeWeight( std::make_pair(bb,temp) );
-                 int ec = (int)PI->getExecutionCount(bb);
-                 DEBUG(errs() << "\nSucc " << bb->getName() << " -> " << temp->getName() << " execution count" <<(int) PI->getExecutionCount(bb)<< '\n');
+                 int ec = (int)PI->getExecutionCount(temp);
+                 DEBUG(errs() << "\nSucc " << bb->getName() << " -> " << temp->getName() << " execution count :" << ec << '\n');
 
                  if( ec > maxexecution)
                  {
 //                    maxexecution = (int)PI->getEdgeWeight( std::make_pair(bb,temp) );
-                    maxexecution = ec;
+                    maxexecution = ece;
                     nxtBlck = temp;
                  }
 
               }
-             if(maxexecution < 0)
+             if(maxexecution = 0)
                 {
                   DEBUG(errs()<<"\n---No Hot trace");
                   return false;
@@ -425,7 +425,7 @@ DEBUG(errs() << "Has more than one successor\n");
                }
              else
                {
-                 DEBUG(errs()<<"\n----->>>>>>>>>>>Block Revisited---------------------------------------------------------------");
+                 DEBUG(errs()<<"\n-----------Block Revisited-----------");
                  return false;//Trace complete.
                }
       }
