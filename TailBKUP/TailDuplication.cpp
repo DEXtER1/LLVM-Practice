@@ -35,7 +35,7 @@ namespace {
       TailDuplication() : FunctionPass(ID) {}
       virtual void getAnalysisUsage(AnalysisUsage &AU) const  {
           //Might have to be changed
-          AU.setPreservesAll();
+//          AU.setPreservesAll();
           AU.addRequired<ProfileInfo>();
       }
       virtual bool runOnFunction(Function &f);
@@ -378,6 +378,7 @@ namespace {
                       }
                     else//Zero unique predecessor
                       {
+
                           DEBUG(errs()<<"\n--Loop Finish for check numPredecessor");
                       }
 
@@ -404,7 +405,7 @@ namespace {
                  if( ec > maxexecution)
                  {
 //                    maxexecution = (int)PI->getEdgeWeight( std::make_pair(bb,temp) );
-                    maxexecution = ece;
+                    maxexecution = ec;
                     nxtBlck = temp;
                  }
 
