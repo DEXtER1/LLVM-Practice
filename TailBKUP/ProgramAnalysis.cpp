@@ -53,32 +53,38 @@ namespace {
         SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,16 > BackEdges;
         int HotTraceCounter, MergeCounter;
 
-        std::vector<std::pair<Function*, BasicBlock*> > HotTraceLink;
-        std::vector<std::pair<Function *, BasicBlock*> > MergeBlockLink;
+        std::vector<std::pair<Function*, int> > HotTraceLink;
+        std::vector<std::pair<Function *, int> > MergeBlockLink;
 };
 
   bool ProgramAnalysis :: runOnModule(Module &M)
     {
         PI = &getAnalysis<ProfileInfo>();
       //Code to set the Hot trace pointer for the Function ; MergeBlocks ; Function
-
+        HOTTRACEBLOCKCOUNT = -1;
+        MERGEBLOCKCOUNT = -1;
       for (Module::iterator i = M.begin(), e = M.end(); i!=e; ++i )
         {
          if(i->isDeclaration())
           continue;
          AnalyseFunction(*i);
          FUNCTIONCOUNT++;
-         HOTTRACEBLOCKCOUNT += HotTraceCounter;
-         MERGEBLOCKCOUNT += MergeCounter;
-         if(HotTraceCounter==0)
-         HotTraceLink.push_back(std::make_pair(i,(BasicBlock *)NULL));
-         else
-         HotTraceLink.push_back(std::make_pair(i, HotTrace.back()));
 
-         if(MergeCounter==0)
-         MergeBlockLink.push_back(std::make_pair(i,(BasicBlock *)NULL));
+         if(HotTraceCounter==-1)
+         HotTraceLink.push_back(std::make_pair(i,-1));
          else
-         MergeBlockLink.push_back(std::make_pair(i, MergeBlocks.back()));
+          {
+            HOTTRACEBLOCKCOUNT += HotTraceCounter;
+            HotTraceLink.push_back(std::make_pair(i, HOTTRACEBLOCKCOUNT));
+          }
+
+         if(MergeCounter==-1)
+         MergeBlockLink.push_back(std::make_pair(i,-1));
+         else
+          {
+            MERGEBLOCKCOUNT += MergeCounter;
+            MergeBlockLink.push_back(std::make_pair(i, MERGEBLOCKCOUNT));
+          }
         }
 
         printAnalysis();
@@ -92,8 +98,6 @@ namespace {
       {
 
         //Clear hottrace and merge_blocks
-        //HotTrace.clear();
-        //MergeBlocks.clear();
 
         HotTraceCounter = 0;
         MergeCounter = 0;
@@ -183,6 +187,7 @@ namespace {
                 HotTrace.push_back(bb);
                 HotTraceCounter++;
                 MergeBlocks.push_back(bb);
+                MergeCounter++;
               }
             else if(uniquePredecessor == 1)
               {
@@ -254,44 +259,42 @@ namespace {
     void ProgramAnalysis::printAnalysis()
       {
         DEBUG(errs()<<"\n---Program Analysis---\n");
-        BasicBlock* bstart;
-        BasicBlock* bend;
-        BasicBlock* mstart;
-        BasicBlock* mend;
-
-        bstart=HotTrace.front();
-        mstart=MergeBlocks.front();
+        int bstart = 0, bend = 0, mstart = 0, mend = 0;
 
         for ( int i = 0; i< (int)HotTraceLink.size(); i++)
-      {
-           DEBUG(errs()<<"Function:"<< (HotTraceLink.at(i).first)->getName() << "  --");
+          {
+           DEBUG(errs()<<"\nFunction:"<< (HotTraceLink.at(i).first)->getName() << "--");
 
            //Print Hottrace
-          if (HotTraceLink.at(i).second == NULL)
+          if (HotTraceLink.at(i).second == -1 )
              {
-              DEBUG(errs()<<"\n\n--No Hot Trace--\n");
-              DEBUG(errs()<<"\n\n--No Merge Blocks--\n");
-              continue;
+              DEBUG(errs()<<"\n--No Hot Trace--");
+
+              if (MergeBlockLink.at(i).second == -1)
+                 {
+                  DEBUG(errs()<<"\n\n--No Merge Blocks--\n");
+                  continue;
+                 }
              }
 
-            DEBUG(errs()<<"\n\n--Hot Trace--\n");
-            for(bend = HotTraceLink.at(i).second; bstart!=bend; bstart++);
-              DEBUG(errs()<<"-->"<<bstart->getName());
+            DEBUG(errs()<<"\n--Hot Trace--\n");
+          for(bend=HotTraceLink.at(i).second; bstart!=bend; bstart++)
+              DEBUG(errs()<<"-->"<<HotTrace.at(bstart)->getName());
+          bstart=bend;
 
-          if (MergeBlockLink.at(i).second == NULL)
+          if (MergeBlockLink.at(i).second == -1)
              {
-              DEBUG(errs()<<"\n\n--No Merge Blocks--\n");
+              DEBUG(errs()<<"\n\n-}}}}}}}}}}-No Merge Blocks--\n");
               continue;
              }
             //Print MergeBlocks
             DEBUG(errs()<<"\n\n--Merge Blocks--\n");
             for(mend=MergeBlockLink.at(i).second; mstart!=mend; mstart++)
-                DEBUG(errs()<<"-->"<<mstart->getName());
+              DEBUG(errs()<<"-->"<<MergeBlocks.at(mstart)->getName());
+            mstart=mend;
 
           }
         DEBUG(errs()<<"\n\n----------------");
-
-
 
       }
 
