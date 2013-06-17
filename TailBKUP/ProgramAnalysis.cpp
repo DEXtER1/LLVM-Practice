@@ -44,6 +44,9 @@ namespace {
       }
       void testTrace();
       void printAnalysis();
+      std::vector<BasicBlock *> getHotTrace(Function &F);
+      std::vector<BasicBlock *> getMergeBlock(Function &F);
+      int functionNumber(Function &F);
 
     private:
         ProfileInfo *PI;
@@ -285,6 +288,13 @@ namespace {
 
       }
 
+std::vector<BasicBlock *> getHotTrace(Function &F)
+  {
+
+  }
+      std::vector<BasicBlock *> getMergeBlock(Function &F);
+
+      int functionNumber(Function &F);
 char ProgramAnalysis::ID = 0;
 static RegisterPass<ProgramAnalysis> X("analysis","--Identify Merge Blocks and Hot trace for Tail Duplciation ",false,false);
 }
