@@ -1,5 +1,4 @@
 #define DEBUG_TYPE "ProgAnalysis"
-
 // Follow the seed and Extend Hot trace until an End statement is reached
 // or a Block is encountered that is already in the hottrace vector.
 // while visiting each basic block check if the visited block has more than one predecessors
@@ -12,53 +11,13 @@
 // For each basic block, clone th basic block
 // Set the predecessor and terminator of each blocks to complete the chain
 // Lastly perform Operand Remapping before proceeding with the next block in the tail Stacks
-#include "llvm/Pass.h"
-#include "llvm/Module.h"
-#include "llvm/Function.h"
-#include "llvm/Analysis/ProfileInfo.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/ADT/Statistic.h"
-#include <stack>
+#include "ProgramAnalysis.h"
 using namespace llvm;
 
   STATISTIC(FUNCTIONCOUNT,"Number of Functions");
   STATISTIC(MERGEBLOCKCOUNT,"Total No of Merge Blocks in Hot trace(includes all functions)");
   STATISTIC(HOTTRACEBLOCKCOUNT,"Total No of Blocks in Hot trace(includes all functions)");
-namespace {
-
-  class ProgramAnalysis : public ModulePass {
-    public:
-
-      static char ID; // Pass identification
-      ProgramAnalysis() : ModulePass(ID) {}
-      virtual bool runOnModule(Module &M);
-      bool AnalyseFunction(Function &F);
-      void checkNumPredecessors(BasicBlock *);
-      bool getNextBasicBlock(BasicBlock *);
-      virtual void getAnalysisUsage(AnalysisUsage &AU) const  {
-          AU.setPreservesAll();
-          AU.addRequired<ProfileInfo>();
-      }
-      void testTrace();
-      void printAnalysis();
-      std::vector<BasicBlock *> getHotTrace(Function &F);
-      std::vector<BasicBlock *> getMergeBlock(Function &F);
-      int functionNumber(Function &F);
-
-    private:
-        ProfileInfo *PI;
-        BasicBlock* NextBlock;
-        std::vector<BasicBlock *> HotTrace;
-        std::vector<BasicBlock *> MergeBlocks;
-        SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,16 > BackEdges;
-        int HotTraceCounter, MergeCounter;
-
-        std::vector<std::pair<Function*, int> > HotTraceLink;
-        std::vector<std::pair<Function *, int> > MergeBlockLink;
-};
+namespace liberty {
 
   bool ProgramAnalysis :: runOnModule(Module &M)
     {
@@ -80,7 +39,9 @@ namespace {
 
         }
 
-        printAnalysis();
+        for(int i=0; i<HotTraceLink.size();i++)
+          DEBUG(errs()<<"\n-Numbers"<<HotTraceLink.at(i).second);
+        //printAnalysis();
       //Code to set the Hot trace pointer for the Function ; MergeBlocks ; Function End Pointers
       return false;
     }
@@ -126,7 +87,7 @@ namespace {
         //testTrace();
         //------------------------------
 
-        //-F.dump();
+        //F.dump();
         return true;
       }
 
@@ -181,6 +142,9 @@ namespace {
                 HotTraceCounter++;
                 MergeBlocks.push_back(bb);
                 MergeCounter++;
+
+            DEBUG(errs()<<"\n\n-ALL-Merge Blocks--\n");
+            DEBUG(errs()<<"-->"<<bb->getName());
               }
             else if(uniquePredecessor == 1)
               {
@@ -253,10 +217,13 @@ namespace {
       {
         DEBUG(errs()<<"\n---Program Analysis---\n");
         int bstart = 0, bend = 0, mstart = 0, mend = 0;
+        DEBUG(errs()<<"\n+++Total number of Functions"<< (int)HotTraceLink.size());
+        DEBUG(errs()<<"\n+++Total number of Functions"<< (int)MergeBlockLink.size());
 
         for ( int i = 0; i< (int)HotTraceLink.size(); i++)
           {
-           DEBUG(errs()<<"\nFunction:"<< (HotTraceLink.at(i).first)->getName() << "--");
+           DEBUG(errs()<<"\nFunction:"<< (HotTraceLink.at(i).first)->getName() << "--"<<i);
+        DEBUG(errs()<<"\n+++Total number of Functions"<< (int)HotTraceLink.size());
 
            //Print Hottrace
           if (HotTraceLink.at(i).second == -1 )
@@ -278,6 +245,7 @@ namespace {
               continue;
              }
             //Print MergeBlocks
+
             DEBUG(errs()<<"\n\n--Merge Blocks--\n");
             for(mend=MergeBlockLink.at(i).second; mstart <= mend; mstart++)
               DEBUG(errs()<<"-->"<<MergeBlocks.at(mstart)->getName());
@@ -287,14 +255,87 @@ namespace {
         DEBUG(errs()<<"\n\n----------------");
 
       }
-
-std::vector<BasicBlock *> getHotTrace(Function &F)
+ int ProgramAnalysis::getFuncNumber(Function *F)
   {
+     int i;
+     for(i=0;i<(int)HotTraceLink.size();i++)
+      {
+        if(HotTraceLink.at(i).first->getName() == F->getName() )
+          break;
+      }
+
+      if(i!=(int) HotTraceLink.size())
+      DEBUG(errs()<<"\n\nFunction is at "<< i<<"th Position");
+      else
+      DEBUG(errs()<<"\n\n------------Function unable to detect");
+      return i;
+  }
+
+std::vector<BasicBlock *> ProgramAnalysis::getHotTrace(int end)
+ {
+    std::vector<BasicBlock *> hottrace;
+//    int end=getFuncNumber(F);//Just returns the function number
+
+//    if(HotTraceLink.at(end).second == -1)//IF -1 then no HotTrace at all
+//      return hottrace;
+//    else
+//      {
+      int hotend = HotTraceLink.at(end).second;
+      DEBUG(errs()<<"\nHotend Value" <<hotend);
+        if(hotend == 0)//Boundary case - Only one element in the hottrace
+          {
+            hottrace.push_back(HotTrace.at(hotend));
+            DEBUG(errs()<<"\n---Hottrace--");
+            int counter = hottrace.size();
+            while(--counter != -1)
+              DEBUG(errs()<<"==>"<<HotTrace.at(counter)->getName());
+            return hottrace;
+          }
+
+      int start = end-1;
+      int hotstart = HotTraceLink.at(start).second;
+      while (hotstart == -1)
+          hotstart = HotTraceLink.at(--start).second;
+
+      hotstart++;
+      for(;hotstart<=hotend;hotstart++)
+        hottrace.push_back(HotTrace.at(hotstart));
+
+      DEBUG(errs()<<"\n---Hottrace--");
+      int counter = 0;//usign start as counter
+      while(counter<hottrace.size())
+        DEBUG(errs()<<"==>"<<HotTrace.at(counter++)->getName());
+
+      return hottrace;
+//    }
 
   }
-      std::vector<BasicBlock *> getMergeBlock(Function &F);
+std::vector<BasicBlock *> ProgramAnalysis::getMergeBlock(int end)
+ {
+    std::vector<BasicBlock *> mergeblocks;
+//    int end=getFuncNumber(F);//Just returns the function number
+    int mergeend = MergeBlockLink.at(end).second;
+    if(mergeend == -1)//IF -1 then no HotTrace at all
+      return mergeblocks;
+    else
+      {
+      int start = end-1;
+      int mergestart = MergeBlockLink.at(start).second;
+      while (mergestart == -1)
+          mergestart = MergeBlockLink.at(--start).second;
+      mergestart++;
+      for(;mergestart<=mergeend;mergestart++)
+        mergeblocks.push_back(MergeBlocks.at(mergestart));
 
-      int functionNumber(Function &F);
+      DEBUG(errs()<<"\n---Merge Blocks--");
+      start = mergeblocks.size();//usign start as counter
+      while(--start != -1)
+        DEBUG(errs()<<"==>"<<MergeBlocks.at(start));
+
+      return mergeblocks;
+      }
+  }
+
 char ProgramAnalysis::ID = 0;
 static RegisterPass<ProgramAnalysis> X("analysis","--Identify Merge Blocks and Hot trace for Tail Duplciation ",false,false);
 }
