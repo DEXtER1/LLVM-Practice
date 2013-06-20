@@ -41,7 +41,9 @@ namespace liberty {
 
         for(int i=0; i<HotTraceLink.size();i++)
           DEBUG(errs()<<"\n-Numbers"<<HotTraceLink.at(i).second);
-        //printAnalysis();
+        for(int i=0; i<MergeBlockLink.size();i++)
+          DEBUG(errs()<<"\n+Merge Numbers"<<MergeBlockLink.at(i).second);
+        printAnalysis();
       //Code to set the Hot trace pointer for the Function ; MergeBlocks ; Function End Pointers
       return false;
     }
@@ -171,9 +173,11 @@ namespace liberty {
         for (succ_iterator SI = succ_begin(bb), E = succ_end(bb); SI != E; ++SI) //find the One from many successor for hot trace.
           {
             BasicBlock *temp= *SI;
-            // const double wt = PI->getEdgeWeight( std::make_pair(bb,temp) );
+            const double wt = PI->getEdgeWeight( std::make_pair(bb,temp) );
             int ec = (int)PI->getExecutionCount(temp);
             DEBUG(errs() << "\nSucc " << bb->getName() << " -> " << temp->getName() << " execution count :" << ec << '\n');
+
+            DEBUG_WITH_TYPE("counts",errs()<<"\n\nExecution Count:"<< ec <<"Edge Weight"<<wt);
             if (ec > maxexecution)
               {
                 //maxexecution = (int)PI->getEdgeWeight( std::make_pair(bb,temp) );
@@ -288,7 +292,7 @@ std::vector<BasicBlock *> ProgramAnalysis::getHotTrace(int end)
             DEBUG(errs()<<"\n---Hottrace--");
             int counter = hottrace.size();
             while(--counter != -1)
-              DEBUG(errs()<<"==>"<<HotTrace.at(counter)->getName());
+              DEBUG(errs()<<"==>"<<hottrace.at(counter)->getName());
             return hottrace;
           }
 
@@ -301,36 +305,34 @@ std::vector<BasicBlock *> ProgramAnalysis::getHotTrace(int end)
       for(;hotstart<=hotend;hotstart++)
         hottrace.push_back(HotTrace.at(hotstart));
 
-      DEBUG(errs()<<"\n---Hottrace--");
-      int counter = 0;//usign start as counter
+      DEBUG(errs()<<"\n---Hottrace--\n");
+      int counter = 0;
       while(counter<hottrace.size())
-        DEBUG(errs()<<"==>"<<HotTrace.at(counter++)->getName());
+        DEBUG(errs()<<"==>"<<hottrace.at(counter++)->getName());
 
       return hottrace;
-//    }
-
   }
+
 std::vector<BasicBlock *> ProgramAnalysis::getMergeBlock(int end)
  {
     std::vector<BasicBlock *> mergeblocks;
 //    int end=getFuncNumber(F);//Just returns the function number
     int mergeend = MergeBlockLink.at(end).second;
-    if(mergeend == -1)//IF -1 then no HotTrace at all
+    if(mergeend == -1)
+      return mergeblocks;
+    int mergestart = MergeBlockLink.at(end-1).second;
+    if(mergeend == mergestart)
       return mergeblocks;
     else
       {
-      int start = end-1;
-      int mergestart = MergeBlockLink.at(start).second;
-      while (mergestart == -1)
-          mergestart = MergeBlockLink.at(--start).second;
       mergestart++;
       for(;mergestart<=mergeend;mergestart++)
         mergeblocks.push_back(MergeBlocks.at(mergestart));
 
-      DEBUG(errs()<<"\n---Merge Blocks--");
-      start = mergeblocks.size();//usign start as counter
-      while(--start != -1)
-        DEBUG(errs()<<"==>"<<MergeBlocks.at(start));
+      DEBUG(errs()<<"\n\n---Merge Blocks--\n");
+      int counter=0;
+      while(counter < mergeblocks.size())
+        DEBUG(errs()<<"==>"<<mergeblocks.at(counter++)->getName());
 
       return mergeblocks;
       }

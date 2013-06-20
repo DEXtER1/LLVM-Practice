@@ -36,8 +36,8 @@ namespace  liberty {
       void perfTailDupl(Function *f);
       void printAnalysis();
       virtual void getAnalysisUsage(AnalysisUsage &AU) const  {
-//          AU.addRequiredID(DemoteRegisterToMemoryID);
           AU.addRequired<ProgramAnalysis>();
+          AU.addRequiredID(DemoteRegisterToMemoryID);
       }
 
     private:
@@ -134,7 +134,7 @@ void TailDuplication::perfTailDupl(Function *F)
 //                       RemapInstruction(I,VMap);
 
 
-                      if (isa<PHINode>(I))
+/*                      if (isa<PHINode>(I))
                         {
                           //Update PHI Node for BBClone
                           PHINode *PN = cast<PHINode>(I);
@@ -153,7 +153,7 @@ void TailDuplication::perfTailDupl(Function *F)
                               DEBUG(errs()<<"Index in PHI Node:"<<PN->getBasicBlockIndex(BI));
                             }
                         }
-                      else
+                      else*/
                         {
                           //Loop over all the operands of the instruction
                           for (unsigned op=0, E = I->getNumOperands(); op != E; ++op)
