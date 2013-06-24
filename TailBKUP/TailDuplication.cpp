@@ -1,4 +1,5 @@
 #define DEBUG_TYPE "TailDupl"
+//#define MAX_REC_LEN 1024
 // Follow the seed and Extend Hot trace until an End statement is reached
 // or a Block is encountered that is already in the hottrace vector.
 // while visiting each basic block check if the visited block has more than one predecessors
@@ -21,10 +22,11 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/Statistic.h"
 #include <stack>
+#include <string>
 #include "ProgramAnalysis.h"
 
 using namespace llvm;
-
+using namespace std;
 namespace  liberty {
 
   class TailDuplication : public ModulePass {
@@ -33,11 +35,13 @@ namespace  liberty {
       static char ID; // Pass identification
       TailDuplication() : ModulePass(ID) {}
       virtual bool runOnModule(Module &M);
-      void perfTailDupl(Function *f);
+      std::vector<BasicBlock *> getHotTrace(Function*,int);
+      std::vector<BasicBlock *> getMergeBlock(Function*,int);
+      void perfTailDupl(Function *f,int);
       void printAnalysis();
       virtual void getAnalysisUsage(AnalysisUsage &AU) const  {
-          AU.addRequired<ProgramAnalysis>();
-          AU.addRequiredID(DemoteRegisterToMemoryID);
+//          AU.addRequired<ProgramAnalysis>();
+//          AU.addRequiredID(DemoteRegisterToMemoryID);
       }
 
     private:
@@ -47,16 +51,60 @@ namespace  liberty {
         SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,16 > BackEdges;
         int HotTraceCounter, MergeCounter;
 
-        std::vector<std::pair<Function*, int> > HotTraceLink;
-        std::vector<std::pair<Function *, int> > MergeBlockLink;
+
+        std::vector<std::string> HotTrace;
+        std::vector<std::string> MergeBlocks;
+        std::vector<int> HotTraceLink;
+        std::vector<int> MergeBlockLink;
 };
 
 
   bool TailDuplication :: runOnModule(Module &M)
     {
       //Code to set the Hot trace pointer for the Function ; MergeBlocks ; Function
-        //printAnalysis();
-        PA = &getAnalysis<ProgramAnalysis>();
+      //printAnalysis();
+//      PA = &getAnalysis<ProgramAnalysis>();
+
+      FILE *fhottrace,*fmerge,*fhotlink,*fmergelink;
+      if((fhottrace=fopen("hottrace", "r"))==NULL)
+        printf("Cannot open file hottrace for reading.\n");
+      if((fmerge=fopen("merge", "r"))==NULL)
+        printf("Cannot open file merge for reading.\n");
+      if((fhotlink=fopen("hotlinks", "r"))==NULL)
+        printf("Cannot open file hotlink for reading.\n");
+      if((fmergelink=fopen("mergelinks", "r"))==NULL)
+        printf("Cannot open file mergelink for reading.\n");
+
+
+       //Copy all the array in vector into HotTrace and MergeBlocks
+       int MAX_SIZE = 1024;
+       char output[MAX_SIZE];
+       int number;
+       while ( fscanf(fhottrace, "%s" ,output) != -1)
+            HotTrace.push_back(output);
+
+       while ( fscanf(fmerge, "%s" ,output) != -1)
+            MergeBlocks.push_back(output);
+
+       //while ( fgets(output, MAX_REC_LEN,fhotlink) != NULL)
+       while ( fscanf(fhotlink,"%d",&number) != -1)
+            HotTraceLink.push_back(number);
+
+       while ( fscanf(fmergelink,"%d",&number) != -1)
+            MergeBlockLink.push_back(number);
+
+
+        for(int i=0; i<(int)HotTrace.size();i++)
+          DEBUG_WITH_TYPE("fileworking",errs()<<"\n-HotTrace"<<HotTrace.at(i));
+        for(int i=0; i<(int)MergeBlocks.size();i++)
+          DEBUG_WITH_TYPE("fileworking",errs()<<"\n-MergeBlocks"<<MergeBlocks.at(i));
+        for(int i=0; i<(int)HotTraceLink.size();i++)
+          DEBUG_WITH_TYPE("fileworking",errs()<<"\n-HotTraceLink"<<HotTraceLink.at(i));
+        for(int i=0; i<(int)MergeBlockLink.size();i++)
+          DEBUG_WITH_TYPE("fileworking",errs()<<"\nMergeBlockLink"<<MergeBlockLink.at(i));
+
+
+      int F=0;
         for (Module::iterator i = M.begin(), e = M.end(); i!=e; ++i )
         {
          if(i->isDeclaration())
@@ -64,17 +112,16 @@ namespace  liberty {
           //Code for Tail Duplication
 
          DEBUG(errs()<<"\n\n\n-Function Name: "<<((Function *)i)->getName());
-          perfTailDupl((Function *)i);
+         perfTailDupl((Function *)i,F++);
+         //i->dump();
         //-------------------------
         }
-        //-F.dump();
         return false;
       }
 
 
 
-
-void TailDuplication::perfTailDupl(Function *F)
+void TailDuplication::perfTailDupl(Function *F,int Fnumb)
   {
         std::vector<BasicBlock *> hot_trace;
         std::vector<BasicBlock *> merge_blocks;
@@ -83,10 +130,9 @@ void TailDuplication::perfTailDupl(Function *F)
 
         //Copy the Hot trace and Merge Blocks for the function in the vectors
 
-        int funcNumber = PA->getFuncNumber(F);
 
-         hot_trace = PA->getHotTrace(funcNumber);
-         merge_blocks = PA->getMergeBlock(funcNumber);
+         hot_trace = getHotTrace(F,Fnumb);
+         merge_blocks = getMergeBlock(F,Fnumb);
 
         if(hot_trace.size() == 0)
           {
@@ -222,9 +268,7 @@ void TailDuplication::perfTailDupl(Function *F)
 
           while(merge_hottrace_pred.size()!=0)
           {
-            DEBUG(errs()<<"\n##@#@#$@#$");
-
-                     DEBUG(errs()<<"Predecessor "<<merge_hottrace_pred.top()->getName()<<" Attempting Removal");
+            DEBUG(errs()<<"Predecessor "<<merge_hottrace_pred.top()->getName()<<" Attempting Removal");
             clonedBB->removePredecessor(merge_hottrace_pred.top());
             merge_hottrace_pred.pop();
           }
@@ -234,6 +278,95 @@ void TailDuplication::perfTailDupl(Function *F)
         DEBUG(errs()<<"\n----------------\n");
 
      }//Perform Tail Duplication function
+
+std::vector<BasicBlock *> TailDuplication::getHotTrace(Function *F,int end)
+ {
+      std::vector<BasicBlock *> hottrace;
+      int hotend = HotTraceLink.at(end);
+      DEBUG(errs()<<"\nHotend Value" <<hotend);
+        if(hotend == 0)//Boundary case - Only one element in the hottrace
+          {
+          for (Function::iterator i = F->begin(), e = F->end(); i != e; ++i)
+              {
+                if (i->getName() == HotTrace.at(0))
+                  {
+                    hottrace.push_back((BasicBlock*)i);
+                    break;
+                  }
+              }
+          DEBUG(errs()<<"\n---Hottrace--");
+          int counter = hottrace.size()-1;
+          for(int i=0;i<=counter; i++)
+              DEBUG(errs()<<"==>"<<hottrace.at(counter)->getName());
+          return hottrace;
+          }
+
+      int start = end-1;
+      int hotstart = HotTraceLink.at(start);
+
+      if(hotstart == hotend) // No Hottrace
+        return hottrace;
+
+      hotstart++;
+      for(;hotstart<=hotend;hotstart++)
+        {
+
+          for (Function::iterator i = F->begin(), e = F->end(); i != e; ++i)
+              {
+                if (i->getName() == HotTrace.at(hotstart))
+                  {
+                    hottrace.push_back((BasicBlock*)i);
+                    break;
+                  }
+              }
+        }
+
+      DEBUG(errs()<<"\n---Hottrace--\n");
+      int counter = 0;
+      while(counter<(int)hottrace.size())
+        DEBUG(errs()<<"==>"<<hottrace.at(counter++)->getName());
+
+      return hottrace;
+  }
+
+std::vector<BasicBlock *> TailDuplication::getMergeBlock(Function *F,int end)
+ {
+    std::vector<BasicBlock *> mergeblocks;
+//    int end=getFuncNumber(F);//Just returns the function number
+    int mergeend = MergeBlockLink.at(end);
+    if(mergeend == -1)
+      return mergeblocks;
+
+    int mergestart;
+
+    if(end == 0)
+      mergestart =0;
+    else
+      mergestart = MergeBlockLink.at(end-1);
+
+      if(mergestart == -1)
+        mergestart = 0;
+
+      for(;mergestart<=mergeend;mergestart++)
+        {
+          for (Function::iterator i = F->begin(), e = F->end(); i != e; ++i)
+              {
+                if(i->getName() == MergeBlocks.at(mergestart))
+                  {
+                    mergeblocks.push_back((BasicBlock*)i);
+                    break;
+                  }
+              }
+        }
+
+
+      DEBUG(errs()<<"\n\n---Merge Blocks--\n");
+      int counter=0;
+      while(counter < (int)mergeblocks.size())
+        DEBUG(errs()<<"==>"<<mergeblocks.at(counter++)->getName());
+      return mergeblocks;
+
+  }
 
 
 char TailDuplication::ID = 0;

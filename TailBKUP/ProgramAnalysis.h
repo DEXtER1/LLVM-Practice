@@ -32,9 +32,6 @@ namespace liberty {
       ProgramAnalysis() : ModulePass(ID) {}
       virtual bool runOnModule(Module &M);
       bool AnalyseFunction(Function &F);
-      std::vector<BasicBlock *> getHotTrace(int);
-      std::vector<BasicBlock *> getMergeBlock(int);
-      int getFuncNumber(Function *);
       void checkNumPredecessors(BasicBlock *);
       bool getNextBasicBlock(BasicBlock *);
       virtual void getAnalysisUsage(AnalysisUsage &AU) const  {
@@ -52,8 +49,7 @@ namespace liberty {
         SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,16 > BackEdges;
         int HotTraceCounter, MergeCounter;
 
-        std::vector<std::pair<Function*, int> > HotTraceLink;
-        std::vector<std::pair<Function *, int> > MergeBlockLink;
-//        int HOTTRACEBLOCKCOUNT,MERGEBLOCKCOUNT,FUNCTIONCOUNT;
+        std::vector<int> HotTraceLink;
+        std::vector<int> MergeBlockLink;
 };
 }

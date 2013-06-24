@@ -33,16 +33,36 @@ namespace liberty {
          FUNCTIONCOUNT++;
 
          HOTTRACEBLOCKCOUNT += HotTraceCounter;
-         HotTraceLink.push_back(std::make_pair(i, HOTTRACEBLOCKCOUNT));
+         HotTraceLink.push_back(HOTTRACEBLOCKCOUNT);
          MERGEBLOCKCOUNT += MergeCounter;
-         MergeBlockLink.push_back(std::make_pair(i, MERGEBLOCKCOUNT));
+         MergeBlockLink.push_back(MERGEBLOCKCOUNT);
 
         }
+      // Save things to a File ; Things to be saved: vectors: MergeBlocks && HotTrace
+      // Vectors: BasicBlock Link; MergeBlock Link
+      //Two files created: arrays stores HotTrace and MergeBlocks, seperated by Commas
+      // Each is separated by \n
+      // HotTrace and MergeBlocks are Seperated by --
+      FILE *fhottrace,*fmerge,*fhotlink,*fmergelink;
+      if((fhottrace=fopen("hottrace", "w"))==NULL)
+        printf("Cannot open file hottrace for reading.\n");
+      if((fmerge=fopen("merge", "w"))==NULL)
+        printf("Cannot open file merge for reading.\n");
+      if((fhotlink=fopen("hotlinks", "w"))==NULL)
+        printf("Cannot open file hotlink for reading.\n");
+      if((fmergelink=fopen("mergelinks", "w"))==NULL)
+        printf("Cannot open file mergelink for reading.\n");
 
-        for(int i=0; i<HotTraceLink.size();i++)
-          DEBUG(errs()<<"\n-Numbers"<<HotTraceLink.at(i).second);
-        for(int i=0; i<MergeBlockLink.size();i++)
-          DEBUG(errs()<<"\n+Merge Numbers"<<MergeBlockLink.at(i).second);
+      for(int i=0; i<(int)HotTrace.size();i++)
+         fprintf(fhottrace, "%s\n", (HotTrace.at(i)->getName()));
+      for(int i=0; i<(int)MergeBlocks.size();i++)
+         fprintf(fmerge, "%s\n", (MergeBlocks.at(i)->getName()));
+      for(int i=0; i<(int)HotTraceLink.size();i++)
+         fprintf(fhotlink, "%d\n", HotTraceLink.at(i));
+      for(int i=0; i<(int)MergeBlockLink.size();i++)
+         fprintf(fmergelink, "%d\n", MergeBlockLink.at(i));
+
+
         printAnalysis();
       //Code to set the Hot trace pointer for the Function ; MergeBlocks ; Function End Pointers
       return false;
@@ -76,13 +96,9 @@ namespace liberty {
               }
             checkNumPredecessors(bb);
             if (getNextBasicBlock(bb))
-              {
                 bb = NextBlock;
-              }
             else
-              {
                 break;
-              }
           }//while Loop
 
         //------- print Trace----------
@@ -226,11 +242,11 @@ namespace liberty {
 
         for ( int i = 0; i< (int)HotTraceLink.size(); i++)
           {
-           DEBUG(errs()<<"\nFunction:"<< (HotTraceLink.at(i).first)->getName() << "--"<<i);
+//           DEBUG(errs()<<"\nFunction:"<< (HotTraceLink.at(i).first)->getName() << "--"<<i);
         DEBUG(errs()<<"\n+++Total number of Functions"<< (int)HotTraceLink.size());
 
            //Print Hottrace
-          if (HotTraceLink.at(i).second == -1 )
+          if (HotTraceLink.at(i) == -1 )
              {
               DEBUG(errs()<<"\n--No Hot Trace--");
 
@@ -239,11 +255,11 @@ namespace liberty {
              }
 
           DEBUG(errs()<<"\n--Hot Trace--\n");
-          for(bend=HotTraceLink.at(i).second; bstart <= bend; bstart++)
+          for(bend=HotTraceLink.at(i); bstart <= bend; bstart++)
               DEBUG(errs()<<"-->"<<HotTrace.at(bstart)->getName());
 //          bstart=bend;
 
-          if (MergeBlockLink.at(i).second == -1)
+          if (MergeBlockLink.at(i) == -1)
              {
               DEBUG(errs()<<"\n\n-----No Merge Blocks--\n");
               continue;
@@ -251,15 +267,15 @@ namespace liberty {
             //Print MergeBlocks
 
             DEBUG(errs()<<"\n\n--Merge Blocks--\n");
-            for(mend=MergeBlockLink.at(i).second; mstart <= mend; mstart++)
+            for(mend=MergeBlockLink.at(i); mstart <= mend; mstart++)
               DEBUG(errs()<<"-->"<<MergeBlocks.at(mstart)->getName());
 //            mstart=mend;
 
           }
         DEBUG(errs()<<"\n\n----------------");
-
+      return;
       }
- int ProgramAnalysis::getFuncNumber(Function *F)
+/* int ProgramAnalysis::getFuncNumber(Function *F)
   {
      int i;
      for(i=0;i<(int)HotTraceLink.size();i++)
@@ -337,7 +353,7 @@ std::vector<BasicBlock *> ProgramAnalysis::getMergeBlock(int end)
       return mergeblocks;
       }
   }
-
+*/
 char ProgramAnalysis::ID = 0;
 static RegisterPass<ProgramAnalysis> X("analysis","--Identify Merge Blocks and Hot trace for Tail Duplciation ",false,false);
 }
