@@ -1,10 +1,10 @@
-# Makefile for hello pass
+# Makefile for Tail Duplication pass
 
 # Path to top level of LLVM hierarchy
 LEVEL = ../..
 
 # Name of the library to build
-LIBRARYNAME = HKTailDuplication
+LIBRARYNAME = TailDuplication
 
 # Make the shared library become a loadable module so the tools can
 # dlopen/dlsym on the resulting library.
